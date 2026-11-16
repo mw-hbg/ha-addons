@@ -11,13 +11,9 @@ image: ghcr.io/mw-hbg/{arch}-addon-garmin-mcp
 arch:
   - amd64
   - aarch64
-startup: application
-boot: auto
 ingress: true
-ingress_port: 8099
 panel_icon: mdi:run-fast
 panel_title: Garmin MCP
-panel_admin: true
 ports:
   8100/tcp: null
 ports_description:
