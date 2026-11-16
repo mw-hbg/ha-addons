@@ -80,6 +80,11 @@ docker exec -u garmin app-smoke python3 -c "
 import os
 open('/data/downloads/ok.txt', 'w').write('x'); os.remove('/data/downloads/ok.txt')
 open('/data/garmin_tokens/ok.txt', 'w').write('x'); os.remove('/data/garmin_tokens/ok.txt')
+try:
+    os.listdir('/data')
+    raise SystemExit('garmin user could list /data')
+except PermissionError:
+    pass
 for path in ('/data/secret_path', '/app/launcher.py', '/data/new_file', '/etc/passwd'):
     try:
         open(path, 'a').close()

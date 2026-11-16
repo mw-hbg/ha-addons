@@ -399,6 +399,12 @@ def mcp_identity() -> tuple[int, int] | None:
 
 def prepare_mcp_dirs(identity: tuple[int, int] | None) -> None:
     """Folders the MCP server may write: owned by its user, private."""
+    if identity is not None:
+        # The user must be able to pass through /data to reach its folders
+        # (execute bit only: it cannot list /data; files there are 0600).
+        mode = DATA.stat().st_mode & 0o777
+        if not mode & 0o001:
+            os.chmod(DATA, mode | 0o001)
     for folder in (TOKEN_DIR, DOWNLOAD_DIR, MCP_HOME):
         folder.mkdir(mode=0o700, exist_ok=True)
         if identity is None:
