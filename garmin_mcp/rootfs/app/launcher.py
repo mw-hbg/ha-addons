@@ -936,6 +936,10 @@ def _mcp_request(url: str, payload: dict, host_header: str | None = None, timeou
     headers = {
         "Content-Type": "application/json",
         "Accept": "application/json, text/event-stream",
+        # A real client name: Cloudflare and similar services block requests
+        # that look like scripts ("Python-urllib").
+        "User-Agent": f"Mozilla/5.0 (compatible; GarminConnectMCP/{os.environ.get('APP_VERSION', 'dev')}; "
+        "+https://github.com/mw-hbg/ha-apps)",
     }
     if host_header:
         headers["Host"] = host_header
@@ -950,8 +954,8 @@ def run_connection_test() -> dict:
     """Check server, Garmin account and the public connector URL, one by one."""
     result: dict = {"time": time.strftime("%H:%M:%S"), "checks": []}
 
-    def add(key: str, ok: bool, detail: str = "") -> None:
-        result["checks"].append({"key": key, "ok": ok, "detail": detail})
+    def add(key: str, ok: bool, detail: str = "", warn: bool = False) -> None:
+        result["checks"].append({"key": key, "ok": ok, "detail": detail, "warn": warn})
 
     # 1. MCP server answers locally
     try:
@@ -1013,11 +1017,33 @@ def run_connection_test() -> dict:
             )
             add("test_public", "result" in data, data.get("result", {}).get("serverInfo", {}).get("name", ""))
         except urllib.error.HTTPError as exc:
-            add("test_public", False, f"HTTP {exc.code}")
+            if blocked_by_proxy(exc):
+                # Blocked before Home Assistant (Cloudflare bot protection, WAF
+                # or IP rules). The AI app may still get through – a note, not an error.
+                add("test_public", True, f"@blocked_proxy|{exc.code}", warn=True)
+            elif exc.code in (401, 403):
+                add("test_public", False, f"@http_forbidden|{exc.code}")
+            else:
+                add("test_public", False, f"HTTP {exc.code}")
         except Exception as exc:  # noqa: BLE001
             add("test_public", False, type(exc).__name__)
     result["ok"] = all(c["ok"] for c in result["checks"])
+    result["warn"] = any(c.get("warn") for c in result["checks"])
     return result
+
+
+def blocked_by_proxy(exc: urllib.error.HTTPError) -> bool:
+    """True if a 403/429/503 came from Cloudflare (or a similar proxy), not from HA."""
+    if exc.code not in (403, 429, 503):
+        return False
+    headers = {k.lower(): v.lower() for k, v in (exc.headers or {}).items()}
+    if "cf-ray" in headers or "cf-mitigated" in headers or "cloudflare" in headers.get("server", ""):
+        return True
+    try:
+        body = exc.read(2048).decode(errors="ignore").lower()
+    except Exception:  # noqa: BLE001
+        body = ""
+    return "cloudflare" in body
 
 
 SERVICES: Services  # set in main()
@@ -1366,13 +1392,18 @@ async def index(request: Request) -> Response:
     test_html = ""
     if TEST_RESULT:
         items = "".join(
-            f'<tr><td>{"✅" if c["ok"] else "❌"}</td><td>{t[c["key"]]}</td>'
+            f'<tr><td>{"⚠️" if c.get("warn") else "✅" if c["ok"] else "❌"}</td><td>{t[c["key"]]}</td>'
             f'<td class="muted">{detail_text(t, c["detail"])}</td></tr>'
             for c in TEST_RESULT["checks"]
         )
+        if not TEST_RESULT["ok"]:
+            summary, cls = t["test_failed"], "err"
+        elif TEST_RESULT.get("warn"):
+            summary, cls = t["test_warn"], "warn"
+        else:
+            summary, cls = t["test_ok"], "ok"
         test_html = (
-            f'<p class="{"ok" if TEST_RESULT["ok"] else "err"}">'
-            f'{t["test_ok"] if TEST_RESULT["ok"] else t["test_failed"]} ({TEST_RESULT["time"]})</p>'
+            f'<p class="{cls}">{summary} <span class="muted">({TEST_RESULT["time"]})</span></p>'
             f'<table>{items}</table>'
         )
     parts.append(

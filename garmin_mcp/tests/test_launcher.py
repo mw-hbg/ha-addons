@@ -143,3 +143,46 @@ def test_direct_mode_removes_helper_integration(monkeypatch, tmp_path):
     assert not component.exists() and not legacy.exists()
     assert not (tmp_path / "discovery_uuid").exists()
     assert remote.cleaned_up
+
+
+# --- connection test: blocks by Cloudflare are a note, not an error --------------
+
+def _http_error(code, headers=None, body=b""):
+    import io
+    import urllib.error
+    from email.message import Message
+
+    msg = Message()
+    for k, v in (headers or {}).items():
+        msg[k] = v
+    return urllib.error.HTTPError("https://example.com", code, "x", msg, io.BytesIO(body))
+
+
+def test_cloudflare_block_is_recognised():
+    assert L.blocked_by_proxy(_http_error(403, {"Server": "cloudflare", "CF-RAY": "abc"}))
+    assert L.blocked_by_proxy(_http_error(403, body=b"<title>Attention Required! | Cloudflare</title>"))
+    assert not L.blocked_by_proxy(_http_error(403, {"Server": "nginx"}))
+    assert not L.blocked_by_proxy(_http_error(404, {"Server": "cloudflare"}))
+
+
+def test_connection_test_sends_a_real_client_name(monkeypatch):
+    seen = {}
+
+    class Resp:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *a):
+            return False
+
+        def read(self):
+            return b'{"result": {}}'
+
+    def fake_urlopen(req, timeout=0):
+        seen.update({k.lower(): v for k, v in req.header_items()})
+        return Resp()
+
+    monkeypatch.setattr(L.urllib.request, "urlopen", fake_urlopen)
+    L._mcp_request("https://example.com/x", {})
+    assert "python-urllib" not in seen["user-agent"].lower()
+    assert "GarminConnectMCP" in seen["user-agent"]

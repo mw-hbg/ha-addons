@@ -97,7 +97,7 @@
     "test_run": "Verbindung testen",
     "test_busy": "Teste … (bis zu 30 s)",
     "test_ok": "Alles funktioniert.",
-    "test_failed": "Etwas funktioniert nicht:",
+    "test_failed": "Etwas funktioniert nicht.",
     "test_server": "MCP-Server antwortet (Tools)",
     "test_garmin": "Garmin-Konto erreichbar",
     "test_public": "Connector-URL aus dem Internet erreichbar",
@@ -116,7 +116,10 @@
     "detail_no_config_access": "kein Zugriff auf den Home-Assistant-Konfigurationsordner",
     "info": "Info",
     "docs_table_head": "| Tool | Was es tut | Art | Bereiche |",
-    "restart_busy": "Startet neu …"
+    "restart_busy": "Startet neu …",
+    "test_warn": "Funktioniert, mit einem Hinweis.",
+    "detail_blocked_proxy": "Cloudflare hat mit HTTP {value} geantwortet – der Bot-Schutz oder eine Firewall-Regel blockiert diesen Test, bevor er Home Assistant erreicht. Funktioniert deine KI-App, kannst du das ignorieren. Sonst in Cloudflare den Pfad /api/webhook/garmin_mcp_* freigeben (Security → WAF / Bots).",
+    "detail_http_forbidden": "HTTP {value} – blockiert, bevor die Anfrage die App erreicht (Firewall, Reverse Proxy oder IP-Freigabeliste). Funktioniert deine KI-App, kannst du das ignorieren."
   },
   "categories": {
     "activity_management": "Aktivitäten",

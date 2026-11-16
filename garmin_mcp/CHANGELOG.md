@@ -6,6 +6,10 @@
   Assistant). The kernel limits every process of the app – including its internal part –
   to what it needs: in the Home Assistant configuration folder only its helper
   integration, no other programs than Python and nginx, no system changes.
+- Fixed: the connection test failed with "HTTP 403" behind Cloudflare, because Cloudflare
+  blocked its requests as a script. The test now identifies itself properly. If Cloudflare
+  (or another proxy) still blocks it, this is shown as a note with a hint instead of an
+  error – the AI app is usually not affected.
 
 ---
 
@@ -14,6 +18,10 @@
   Teil – auf das Nötige: im Home-Assistant-Konfigurationsordner nur ihre
   Hilfs-Integration, keine anderen Programme als Python und nginx, keine Änderungen am
   System.
+- Behoben: Der Verbindungstest schlug hinter Cloudflare mit „HTTP 403“ fehl, weil Cloudflare
+  seine Anfragen als Skript blockiert hat. Der Test meldet sich jetzt mit einem richtigen
+  Namen. Blockiert Cloudflare (oder ein anderer Proxy) trotzdem, erscheint das als Hinweis
+  mit Lösungsvorschlag statt als Fehler – die KI-App ist davon meist nicht betroffen.
 
 ## 0.4.2
 
