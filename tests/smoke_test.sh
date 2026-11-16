@@ -48,7 +48,7 @@ assert code(f'http://127.0.0.1:8100/{secret}/mcp', 'POST') == 503
 "
 
 echo "3. Secret path is never written to the log"
-secret=$(cat "$data/secret_path")
+secret=$(docker exec addon-smoke cat /data/secret_path)
 if docker logs addon-smoke 2>&1 | grep -q "$secret"; then
   echo "secret path found in log" >&2
   exit 1
