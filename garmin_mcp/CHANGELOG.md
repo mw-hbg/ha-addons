@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+- Security: nginx could write the secret path to the add-on log when the server was not
+  reachable for a moment (e.g. during a restart). nginx now only logs critical errors.
+  If you shared your add-on log, generate a new secret URL.
+
 - Automated tests for every change: unit tests (tool protection, selection, texts, helper
   integration) and a smoke test of the built image.
 - New release process: images are published before the version number changes, so Home
