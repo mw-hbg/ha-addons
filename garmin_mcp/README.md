@@ -180,20 +180,21 @@ URL from it first. Troubleshooting tips: [DOCS.md](DOCS.md).
 * **Local testing:** copy the `garmin_mcp` folder into the local apps folder of your
   Home Assistant host (Samba or SSH), remove the `image:` line from `config.yaml` and install it
   from *Local apps* – Home Assistant then builds the image itself.
-* **Tests:** `pytest tests` (unit tests for the launcher and the helper
-  integration); every push also builds both images and runs a smoke test of
-  the container (`tests/smoke_test.sh`).
+* **Tests:** `bash garmin_mcp/tests/setup.sh` once, then `pytest garmin_mcp/tests` from
+  the repository root (unit tests for the app and the helper integration); every push
+  also builds both images and runs a smoke test of the container
+  (`garmin_mcp/tests/smoke_test.sh`).
 * **Changes:** add an entry under `## Unreleased` in `CHANGELOG.md` – English first,
   then the same in German below a `---` line. Never change `version` in `config.yaml`
   by hand.
 * **Translations:** see [TRANSLATING.md](TRANSLATING.md).
-* **Releases:** *Actions → Release → Run workflow* with the new version. The
-  workflow builds and pushes the images first, then sets the version,
-  finishes the changelog, tags and publishes the release – so Home Assistant
-  only offers an update once its images exist.
-* **Garmin server updates:** a weekly check opens an issue when
-  [Taxuspt/garmin_mcp](https://github.com/Taxuspt/garmin_mcp) has new commits.
-  Update `UPSTREAM_REF` in the `Dockerfile` deliberately and let the tests run.
+* **Releases:** *Actions → Release → Run workflow*, choose `garmin_mcp` and enter the
+  new version. The workflow builds and pushes the images first, then sets the version,
+  finishes the changelog, tags (`garmin_mcp-v1.2.3`) and publishes the release – so
+  Home Assistant only offers an update once its images exist.
+* **Garmin server updates:** a weekly check (configured in `upstream.yaml`) opens an
+  issue when [Taxuspt/garmin_mcp](https://github.com/Taxuspt/garmin_mcp) has new
+  commits. Update `UPSTREAM_REF` in the `Dockerfile` deliberately and let the tests run.
 
 ## Credits and license
 

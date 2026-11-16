@@ -1,0 +1,8 @@
+# Weekly check (.github/workflows/upstream-check.yaml): is there a newer
+# commit of the upstream project than the one this app is pinned to?
+name: Garmin MCP server
+repo: Taxuspt/garmin_mcp
+branch: main
+# File and pattern holding the pinned commit
+file: Dockerfile
+pattern: '^ARG UPSTREAM_REF=(\S+)'

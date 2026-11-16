@@ -11,8 +11,8 @@ import pytest
 import i18n
 import launcher as L
 
-ROOT = Path(__file__).resolve().parent.parent
-APP = ROOT / "garmin_mcp"
+ROOT = Path(__file__).resolve().parent.parent  # the app folder
+APP = ROOT
 CODES = sorted(i18n.LANGUAGES)
 OTHER = [c for c in CODES if c != "en"]
 

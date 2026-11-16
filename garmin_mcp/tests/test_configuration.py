@@ -9,7 +9,7 @@ import pytest
 
 import launcher as L
 
-APP_DIR = Path(__file__).resolve().parent.parent / "garmin_mcp"
+APP_DIR = Path(__file__).resolve().parent.parent
 
 
 def opts(**kwargs):

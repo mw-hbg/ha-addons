@@ -6,8 +6,9 @@ import sys
 import tempfile
 from pathlib import Path
 
+# Tests live in the app folder: garmin_mcp/tests
 ROOT = Path(__file__).resolve().parent.parent
-APP = ROOT / "garmin_mcp" / "rootfs" / "app"
+APP = ROOT / "rootfs" / "app"
 
 _tmp = Path(tempfile.mkdtemp(prefix="garmin-app-test-"))
 os.environ["APP_DATA_DIR"] = str(_tmp / "data")

@@ -1,6 +1,6 @@
-name: Bug report / Fehlerbericht
-description: Something does not work as expected.
-labels: [bug]
+name: "Garmin Connect MCP: bug report / Fehlerbericht"
+description: Something in the Garmin Connect MCP app does not work as expected.
+labels: [bug, garmin_mcp]
 body:
   - type: markdown
     attributes:
@@ -11,7 +11,7 @@ body:
     id: app_version
     attributes:
       label: App version
-      placeholder: "0.3.0"
+      placeholder: "0.4.2"
     validations:
       required: true
   - type: input

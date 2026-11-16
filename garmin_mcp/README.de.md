@@ -191,18 +191,21 @@ Ergebnis von **Verbindung testen** und das App-Protokoll (Reiter *Protokoll*) mi
   Home-Assistant-Hosts kopieren (Samba oder SSH), in `config.yaml` die Zeile `image:`
   entfernen und unter *Lokale Apps* installieren – Home Assistant baut das Image dann
   selbst.
-* **Tests:** `pytest tests` (Unit-Tests für die App und die Hilfs-Integration); jeder
-  Push baut außerdem beide Images und testet den fertigen Container
-  (`tests/smoke_test.sh`).
+* **Tests:** einmal `bash garmin_mcp/tests/setup.sh`, dann `pytest garmin_mcp/tests` im
+  Repository-Ordner (Unit-Tests für die App und die Hilfs-Integration); jeder Push baut
+  außerdem beide Images und testet den fertigen Container
+  (`garmin_mcp/tests/smoke_test.sh`).
 * **Änderungen:** Eintrag unter `## Unreleased` in `CHANGELOG.md` – erst Englisch, dann
   dasselbe auf Deutsch unter einer `---`-Linie. `version` in `config.yaml` nie von Hand
   ändern.
 * **Übersetzungen:** siehe [TRANSLATING.md](TRANSLATING.md).
-* **Releases:** *Actions → Release → Run workflow* mit der neuen Version. Der Ablauf baut
-  und veröffentlicht zuerst die Images, setzt dann die Version, schließt den Changelog
-  ab, setzt den Tag und veröffentlicht das Release – Home Assistant bietet ein Update
+* **Releases:** *Actions → Release → Run workflow*, `garmin_mcp` auswählen und die neue
+  Version eintragen. Der Ablauf baut und veröffentlicht zuerst die Images, setzt dann die
+  Version, schließt den Changelog ab, setzt den Tag (`garmin_mcp-v1.2.3`) und
+  veröffentlicht das Release – Home Assistant bietet ein Update
   also erst an, wenn die Images existieren.
-* **Updates des Garmin-Servers:** Eine wöchentliche Prüfung legt ein Issue an, wenn
+* **Updates des Garmin-Servers:** Eine wöchentliche Prüfung (eingestellt in
+  `upstream.yaml`) legt ein Issue an, wenn
   [Taxuspt/garmin_mcp](https://github.com/Taxuspt/garmin_mcp) neue Commits hat.
   `UPSTREAM_REF` im `Dockerfile` bewusst anheben und die Tests laufen lassen.
 

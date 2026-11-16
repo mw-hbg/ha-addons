@@ -2,6 +2,13 @@ name: Feature request / Wunsch
 description: Suggest an improvement.
 labels: [enhancement]
 body:
+  - type: input
+    id: app
+    attributes:
+      label: Which app? / Welche App?
+      placeholder: "Garmin Connect MCP"
+    validations:
+      required: true
   - type: textarea
     id: idea
     attributes:

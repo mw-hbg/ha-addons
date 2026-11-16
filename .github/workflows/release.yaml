@@ -1,15 +1,29 @@
 name: Release
 
-# Actions → Release → "Run workflow", enter the new version (e.g. 0.4.0).
+# Actions → Release → "Run workflow": pick the app, enter its new version.
 #
 # Order matters: the images are built and pushed FIRST. Only then is the
-# version in config.yaml raised – that is the moment Home Assistant offers
-# the update, so an update can never point to an image that doesn't exist yet.
+# version in the app's config.yaml raised – that is the moment Home Assistant
+# offers the update, so an update can never point to an image that doesn't
+# exist yet.
+#
+# Each app is versioned on its own; tags are "<app>-v<version>"
+# (e.g. garmin_mcp-v0.4.2). Release notes are the app's "## Unreleased"
+# section of its CHANGELOG.md.
+#
+# New app: add its folder name to the "app" options below (the Test workflow
+# fails until it is listed).
 on:
   workflow_dispatch:
     inputs:
+      app:
+        description: "App"
+        required: true
+        type: choice
+        options:
+          - garmin_mcp
       version:
-        description: "New version, e.g. 0.4.0"
+        description: "New version, e.g. 1.2.3"
         required: true
         type: string
 
@@ -25,30 +39,48 @@ jobs:
   prepare:
     runs-on: ubuntu-latest
     outputs:
+      app: ${{ inputs.app }}
+      name: ${{ steps.info.outputs.name }}
       version: ${{ steps.check.outputs.version }}
-      owner: ${{ steps.check.outputs.owner }}
+      tag: ${{ steps.check.outputs.tag }}
+      image: ${{ steps.check.outputs.image }}
+      builds: ${{ steps.info.outputs.builds }}
     steps:
       - uses: actions/checkout@v7
+      - name: Read the app
+        id: info
+        run: |
+          pip install --quiet pyyaml
+          python3 .github/scripts/apps.py check
+          python3 .github/scripts/apps.py info "${{ inputs.app }}" >> "$GITHUB_OUTPUT"
       - name: Check version and changelog
         id: check
+        env:
+          APP: ${{ inputs.app }}
+          CURRENT: ${{ steps.info.outputs.version }}
+          IMAGE: ${{ steps.info.outputs.image }}
         run: |
           version="${{ inputs.version }}"
           version="${version#v}"
           if ! [[ "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
             echo "::error::Version must look like 1.2.3"; exit 1
           fi
-          current=$(yq -r '.version' garmin_mcp/config.yaml)
-          if [ "$(printf '%s\n%s\n' "$current" "$version" | sort -V | tail -1)" != "$version" ] || [ "$current" = "$version" ]; then
-            echo "::error::$version is not higher than the current version $current"; exit 1
+          if [ "$(printf '%s\n%s\n' "$CURRENT" "$version" | sort -V | tail -1)" != "$version" ] || [ "$CURRENT" = "$version" ]; then
+            echo "::error::$version is not higher than the current version $CURRENT of $APP"; exit 1
           fi
-          if git ls-remote --exit-code --tags origin "v$version" >/dev/null; then
-            echo "::error::Tag v$version already exists"; exit 1
+          tag="$APP-v$version"
+          if git ls-remote --exit-code --tags origin "$tag" >/dev/null; then
+            echo "::error::Tag $tag already exists"; exit 1
           fi
-          if ! grep -q '^## Unreleased' garmin_mcp/CHANGELOG.md; then
-            echo "::error::garmin_mcp/CHANGELOG.md has no '## Unreleased' section"; exit 1
+          if ! grep -q '^## Unreleased' "$APP/CHANGELOG.md"; then
+            echo "::error::$APP/CHANGELOG.md has no '## Unreleased' section"; exit 1
           fi
-          echo "version=$version" >> "$GITHUB_OUTPUT"
-          echo "owner=$(echo '${{ github.repository_owner }}' | tr '[:upper:]' '[:lower:]')" >> "$GITHUB_OUTPUT"
+          owner=$(echo '${{ github.repository_owner }}' | tr '[:upper:]' '[:lower:]')
+          case "$IMAGE" in
+            "ghcr.io/$owner/"*) ;;
+            *) echo "::error::image in $APP/config.yaml must start with ghcr.io/$owner/"; exit 1 ;;
+          esac
+          { echo "version=$version"; echo "tag=$tag"; echo "image=$IMAGE"; } >> "$GITHUB_OUTPUT"
 
   images:
     needs: prepare
@@ -56,11 +88,7 @@ jobs:
     strategy:
       fail-fast: true
       matrix:
-        include:
-          - arch: amd64
-            platform: linux/amd64
-          - arch: aarch64
-            platform: linux/arm64
+        include: ${{ fromJSON(needs.prepare.outputs.builds) }}
     steps:
       - uses: actions/checkout@v7
       - uses: docker/setup-qemu-action@v4
@@ -70,20 +98,26 @@ jobs:
           registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
-      - name: Build and push ${{ matrix.arch }}
+      - name: Image name for ${{ matrix.arch }}
+        id: image
+        env:
+          IMAGE: ${{ needs.prepare.outputs.image }}
+          ARCH: ${{ matrix.arch }}
+        run: echo "name=${IMAGE//\{arch\}/$ARCH}" >> "$GITHUB_OUTPUT"
+      - name: Build and push ${{ matrix.app }} (${{ matrix.arch }})
         uses: docker/build-push-action@v7
         with:
-          context: ./garmin_mcp
+          context: ./${{ matrix.app }}
           platforms: ${{ matrix.platform }}
           push: true
           build-args: |
             BUILD_VERSION=${{ needs.prepare.outputs.version }}
             BUILD_ARCH=${{ matrix.arch }}
           tags: |
-            ghcr.io/${{ needs.prepare.outputs.owner }}/${{ matrix.arch }}-app-garmin-mcp:${{ needs.prepare.outputs.version }}
-            ghcr.io/${{ needs.prepare.outputs.owner }}/${{ matrix.arch }}-app-garmin-mcp:latest
-          cache-from: type=gha,scope=${{ matrix.arch }}
-          cache-to: type=gha,mode=max,scope=${{ matrix.arch }}
+            ${{ steps.image.outputs.name }}:${{ needs.prepare.outputs.version }}
+            ${{ steps.image.outputs.name }}:latest
+          cache-from: type=gha,scope=${{ matrix.app }}-${{ matrix.arch }}
+          cache-to: type=gha,mode=max,scope=${{ matrix.app }}-${{ matrix.arch }}
 
   publish:
     needs: [prepare, images]
@@ -93,16 +127,19 @@ jobs:
       - name: Set version, finish changelog, tag and release
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          APP: ${{ needs.prepare.outputs.app }}
+          NAME: ${{ needs.prepare.outputs.name }}
           VERSION: ${{ needs.prepare.outputs.version }}
+          TAG: ${{ needs.prepare.outputs.tag }}
         run: |
-          sed -i "s/^version: .*/version: \"$VERSION\"/" garmin_mcp/config.yaml
-          sed -i "0,/^## Unreleased/s//## $VERSION/" garmin_mcp/CHANGELOG.md
+          sed -i "s/^version: .*/version: \"$VERSION\"/" "$APP/config.yaml"
+          sed -i "0,/^## Unreleased/s//## $VERSION/" "$APP/CHANGELOG.md"
           # Release notes = this version's changelog section
-          awk -v v="## $VERSION" '$0==v{f=1;next} /^## /{if(f)exit} f' garmin_mcp/CHANGELOG.md > notes.md
+          awk -v v="## $VERSION" '$0==v{f=1;next} /^## /{if(f)exit} f' "$APP/CHANGELOG.md" > notes.md
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add garmin_mcp/config.yaml garmin_mcp/CHANGELOG.md
-          git commit -m "Release $VERSION"
-          git tag "v$VERSION"
-          git push origin HEAD "v$VERSION"
-          gh release create "v$VERSION" --title "v$VERSION" --notes-file notes.md --latest
+          git add "$APP/config.yaml" "$APP/CHANGELOG.md"
+          git commit -m "Release $NAME $VERSION"
+          git tag "$TAG"
+          git push origin HEAD "$TAG"
+          gh release create "$TAG" --title "$NAME $VERSION" --notes-file notes.md

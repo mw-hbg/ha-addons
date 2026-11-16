@@ -1,5 +1,21 @@
 # Changelog
 
+## Unreleased
+
+- The repository is now ready for more apps: tests, image builds and releases work for
+  every app folder automatically. When releasing, you choose the app; tags are now named
+  `garmin_mcp-v<version>` (earlier tags keep their names).
+- Development: tests and the documentation script moved into the app folder
+  (`garmin_mcp/tests`, `garmin_mcp/scripts`). Nothing changes for users.
+
+---
+
+- Das Repository ist jetzt für weitere Apps vorbereitet: Tests, Images und Releases
+  funktionieren automatisch für jeden App-Ordner. Beim Veröffentlichen wählst du die App
+  aus; Tags heißen jetzt `garmin_mcp-v<Version>` (frühere Tags behalten ihren Namen).
+- Entwicklung: Tests und das Skript für die Anleitung liegen jetzt im App-Ordner
+  (`garmin_mcp/tests`, `garmin_mcp/scripts`). Für Nutzer ändert sich nichts.
+
 ## 0.4.1
 
 - Fixed: the app page reloaded itself every few seconds while remote access was being set

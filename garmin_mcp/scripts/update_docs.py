@@ -1,6 +1,7 @@
 """Regenerate the tool tables in DOCS.md / DOCS.<lang>.md from the code.
 
-Run after a server update or a translation change:  python scripts/update_docs.py
+Run after a server update or a translation change (in the app folder):
+    python scripts/update_docs.py
 The tests fail if a table is out of date.
 """
 
@@ -10,8 +11,8 @@ import sys
 import tempfile
 from pathlib import Path
 
-ROOT = Path(__file__).resolve().parent.parent
-APP = ROOT / "garmin_mcp"
+APP = Path(__file__).resolve().parent.parent
+ROOT = APP.parent
 sys.path.insert(0, str(APP / "rootfs" / "app"))
 os.environ.setdefault("APP_DATA_DIR", tempfile.mkdtemp())
 os.environ.setdefault("HA_CONFIG_DIR", tempfile.mkdtemp())

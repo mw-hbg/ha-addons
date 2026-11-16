@@ -15,7 +15,7 @@ below with it.
 | 4 | `DOCS.xx.md` *(optional)* | Documentation linked from the app page | Copy `DOCS.md`, translate it and keep the lines `<!-- tools:start -->` / `<!-- tools:end -->`. Set `"docs_file": "DOCS.xx.md"` in `i18n/xx.json`. Without it the English documentation is linked. |
 | 5 | `README.xx.md` *(optional)* | GitHub | Copy `README.md` and add a link to it at the top of the other READMEs. |
 
-Then, from the repository folder:
+Then, in the app folder (`garmin_mcp`):
 
 ```sh
 python scripts/update_docs.py   # fills the tool table in the documentation
@@ -36,5 +36,5 @@ assistants understand them and answer in the user's language anyway.
 Die App ist vollständig auf Englisch und Deutsch verfügbar. Eine weitere Sprache braucht
 nur ein paar Dateien, keinen Code. Englisch ist die Vorlage: Was (noch) nicht übersetzt
 ist, erscheint auf Englisch. Die Schritte stehen in der Tabelle oben – `xx` durch den
-zweibuchstabigen Sprachcode ersetzen, danach `python scripts/update_docs.py` und
-`pytest tests` ausführen.
+zweibuchstabigen Sprachcode ersetzen, danach im App-Ordner (`garmin_mcp`)
+`python scripts/update_docs.py` und `pytest tests` ausführen.
