@@ -8,12 +8,14 @@ Battery, Trainingsbelastung – und strukturierte Workouts anlegen, die auf dein
 Uhr synchronisiert werden.
 
 Die App betreibt einen [MCP](https://modelcontextprotocol.io)-Server direkt
-in deinem Home Assistant. Deine Daten gehen also ohne Drittanbieter dazwischen
+in deinem Home Assistant. Deine Daten gehen also ohne zusätzlichen Dienst dazwischen
 von Garmin zu deinem KI-Assistenten.
 
-> **Inoffiziell.** Nicht mit Garmin verbunden oder von Garmin unterstützt. Das
+> **Inoffiziell.** Nicht mit Garmin verbunden oder von Garmin unterstützt. Die
 > App nutzt dieselben internen Schnittstellen wie die Garmin-Connect-Website,
 > die Garmin jederzeit ändern oder sperren kann. Nutzung auf eigenes Risiko.
+
+> **Experimentell** bis Version 1.0 – sie funktioniert, Details können sich aber noch ändern.
 
 ## Funktionen
 
@@ -35,7 +37,7 @@ von Garmin zu deinem KI-Assistenten.
   Installation zeigt nur die App-Seite an).
 * **Geschützter Endpunkt:** nur über eine lange, zufällige geheime URL
   erreichbar, die du per Klick neu erzeugen kannst.
-* **Deutsch und Englisch** – App-Seite, Konfiguration, Benachrichtigungen und Anleitung;
+* **Deutsch und Englisch** – App-Seite, Konfiguration, Reparatur-Hinweise und Anleitung;
   weitere Sprachen lassen sich ohne Code ergänzen ([TRANSLATING.md](TRANSLATING.md)).
 * Funktioniert mit jeder KI-App, die Remote-MCP-Server (Streamable HTTP) unterstützt.
 * Fertige Images für `amd64` und `aarch64` (Raspberry Pi 4/5).
@@ -74,6 +76,31 @@ Ausführliche Anleitung: [DOCS.de.md](DOCS.de.md). Der Tab *Dokumentation* der A
 sie auf Englisch (Home Assistant kann dort nur eine Sprache anzeigen); ganz oben steht
 der Link zur deutschen Fassung.
 
+## Deine Daten und Sicherheit
+
+* **Was die KI liest, geht an deinen KI-Anbieter.** Nutzt dein KI-Assistent ein Tool,
+  wird das Ergebnis (z. B. Schlaf- oder Herzfrequenzdaten) an diesen Anbieter (Anthropic,
+  OpenAI …) geschickt und nach dessen Datenschutzbedingungen verarbeitet. Gib nur frei,
+  was du teilen willst: *Tools auswählen* auf der App-Seite oder Reiter *Konfiguration*.
+* **Schreibrechte sind standardmäßig begrenzt** (`create_only`): Die KI darf Workouts
+  anlegen und einplanen und Einträge hinzufügen, aber nie etwas löschen oder
+  überschreiben. `read_only` und `full` sind wählbar.
+* **Behandle die Connector-URL wie ein Passwort.** Wer sie kennt, kann die freigegebenen
+  Tools nutzen. Keine Screenshots oder Protokolle teilen, in denen sie steht; ist sie
+  bekannt geworden: **Neue geheime URL erzeugen** auf der App-Seite.
+* **Dein Garmin-Passwort wird nie gespeichert** – nur die Tokens, die Garmin nach der
+  Anmeldung ausstellt (etwa sechs Monate gültig), im privaten Speicher der App und in
+  deinen Home-Assistant-Backups. *Abmelden und Tokens löschen* entfernt sie aus der App;
+  um sie bei Garmin ungültig zu machen, änderst du dein Garmin-Passwort.
+* **Die App kann Home Assistant nicht verändern:** kein Zugriff auf die
+  Home-Assistant-API. Ihr einziger Zugriff ist der Konfigurationsordner, und zwar nur, um
+  ihre Hilfs-Integration hineinzukopieren. Der MCP-Server – der einzige von außen
+  erreichbare Teil – läuft als eingeschränkter Benutzer und ist mit Linux-Landlock in
+  seine eigenen Ordner eingesperrt.
+
+Details: *Sicherheit* in [DOCS.de.md](DOCS.de.md). Eine Sicherheitslücke gefunden? Bitte
+vertraulich melden – siehe [SECURITY.md](../SECURITY.md).
+
 ## Warum installiert die App eine Integration?
 
 KI-Assistenten rufen MCP-Server **aus dem Internet** auf. Von außen ist meist
@@ -81,18 +108,21 @@ nur Home Assistant selbst erreichbar (über Nabu Casa, Cloudflare-Tunnel oder
 Reverse Proxy), nicht aber die Apps, die in eigenen Containern laufen. Und
 nur Code, der *in* Home Assistant läuft, kann dort eine Adresse anlegen.
 
-Deshalb legt die App beim ersten Start eine winzige Hilfs-Integration an
-(`custom_components/garmin_mcp_webhook`). Sie richtet einen Home-Assistant-
-**Webhook** mit einer langen Zufalls-ID ein (`/api/webhook/garmin_mcp_…`) und
-reicht jede Anfrage unverändert an die App in deinem Netz weiter. Sie
-speichert nichts, liest sonst nichts und protokolliert nur Fehler.
+Deshalb kopiert die App beim ersten Start eine winzige Hilfs-Integration in Home
+Assistant (`custom_components/garmin_mcp_webhook`) und meldet ihre Einstellungen über die
+offizielle App-Erkennung von Home Assistant – Home Assistant richtet die Integration
+damit selbst ein. Die Integration legt einen **Webhook** mit einer langen Zufalls-ID an
+(`/api/webhook/garmin_mcp_…`) und reicht jede Anfrage unverändert an die App in deinem
+Netz weiter. Einmal pro Minute teilt sie der App deine externe Adresse und Sprache mit
+(für die App-Seite) und fragt den Garmin-Anmeldestatus ab (für den Reparatur-Hinweis).
+Sie speichert nichts und protokolliert nur Fehler.
 
 * Vorteil: kein zusätzlicher Hostname, Tunnel oder Portfreigabe.
-* Preis: ein Neustart von Home Assistant nach der Installation (und nach
-  Updates der Hilfs-Integration). App-Seite und Reparatur-Hinweis sagen dir,
-  wann.
-* Sauber deinstallieren: Deinstallierst du die App, merkt die Hilfs-Integration das
-  innerhalb von 10–20 Minuten und entfernt sich samt Dateien selbst – ohne Neustart.
+* Preis: ein Neustart von Home Assistant nach der Installation (nur auf der App-Seite
+  angezeigt) und nach Updates der Hilfs-Integration (als Reparatur-Hinweis).
+* Sauber deinstallieren: App deinstallieren, und Home Assistant entfernt den Eintrag der
+  Integration selbst; danach löscht sie ihre Dateien – ohne Neustart. War Home Assistant
+  dabei aus, passiert das innerhalb von 10–20 Minuten nach dem nächsten Start.
 
 ## Fernzugriff: webhook oder direct
 
@@ -129,8 +159,58 @@ absichern willst.
 
 Beim Umstellen ändert sich die Connector-URL – trag die neue in deiner KI-App ein.
 
-## Lizenz
+## Voraussetzungen
 
-MIT-Lizenz, siehe [LICENSE](../LICENSE). Die App wird kostenlos und ohne
-Gewähr bereitgestellt. Lizenzen der enthaltenen Software:
+* Home Assistant OS oder Supervised, Version 2026.2 oder neuer, auf `amd64` oder
+  `aarch64` (z. B. Raspberry Pi 4/5)
+* Ein Garmin-Connect-Konto
+* Home Assistant per HTTPS aus dem Internet erreichbar (Nabu Casa, Cloudflare-Tunnel,
+  Reverse Proxy …)
+* Eine KI-App, die Remote-MCP-Server (Streamable HTTP) unterstützt, z. B. Claude oder
+  ChatGPT
+
+## Updates und Deinstallieren
+
+* **Updates** erscheinen in Home Assistant wie bei jeder anderen App. Was sich geändert
+  hat, steht im [Changelog](CHANGELOG.md) (auf Englisch und Deutsch). Bringt ein Update
+  eine neue Version der Hilfs-Integration mit, bittet ein Reparatur-Hinweis um einen
+  Neustart von Home Assistant.
+* **Deinstallieren:** einfach die App deinstallieren – die Hilfs-Integration entfernt
+  sich selbst (siehe oben). Die Garmin-Tokens werden mit der App gelöscht.
+
+## Hilfe und Rückmeldungen
+
+Probleme oder Ideen: [Issue anlegen](https://github.com/mw-hbg/ha-apps/issues). Bitte das
+Ergebnis von **Verbindung testen** und das App-Protokoll (Reiter *Protokoll*) mitschicken
+– vorher die Connector-URL daraus entfernen. Tipps zur Fehlersuche:
+[DOCS.de.md](DOCS.de.md).
+
+## Entwicklung
+
+* **Lokal testen:** den Ordner `garmin_mcp` in den lokalen App-Ordner deines
+  Home-Assistant-Hosts kopieren (Samba oder SSH), in `config.yaml` die Zeile `image:`
+  entfernen und unter *Lokale Apps* installieren – Home Assistant baut das Image dann
+  selbst.
+* **Tests:** `pytest tests` (Unit-Tests für die App und die Hilfs-Integration); jeder
+  Push baut außerdem beide Images und testet den fertigen Container
+  (`tests/smoke_test.sh`).
+* **Änderungen:** Eintrag unter `## Unreleased` in `CHANGELOG.md` – erst Englisch, dann
+  dasselbe auf Deutsch unter einer `---`-Linie. `version` in `config.yaml` nie von Hand
+  ändern.
+* **Übersetzungen:** siehe [TRANSLATING.md](TRANSLATING.md).
+* **Releases:** *Actions → Release → Run workflow* mit der neuen Version. Der Ablauf baut
+  und veröffentlicht zuerst die Images, setzt dann die Version, schließt den Changelog
+  ab, setzt den Tag und veröffentlicht das Release – Home Assistant bietet ein Update
+  also erst an, wenn die Images existieren.
+* **Updates des Garmin-Servers:** Eine wöchentliche Prüfung legt ein Issue an, wenn
+  [Taxuspt/garmin_mcp](https://github.com/Taxuspt/garmin_mcp) neue Commits hat.
+  `UPSTREAM_REF` im `Dockerfile` bewusst anheben und die Tests laufen lassen.
+
+## Dank und Lizenz
+
+* MCP-Server: [Taxuspt/garmin_mcp](https://github.com/Taxuspt/garmin_mcp) (MIT)
+* Garmin-Client: [cyberjunky/python-garminconnect](https://github.com/cyberjunky/python-garminconnect) (MIT)
+
+Diese App steht unter der [MIT-Lizenz](../LICENSE). Sie wird kostenlos und ohne Gewähr
+bereitgestellt. Lizenzen der enthaltenen Software:
 [THIRD_PARTY_NOTICES.md](../THIRD_PARTY_NOTICES.md).

@@ -36,3 +36,9 @@ Repository erscheinen danach automatisch unter *App installieren*.
 | App | Beschreibung |
 |---|---|
 | [Garmin Connect MCP](garmin_mcp/README.de.md) | KI-Assistenten (Claude, ChatGPT, …) lesen deine Trainings- und Gesundheitsdaten aus Garmin Connect und planen Workouts auf deiner Uhr. |
+
+Benötigt Home Assistant OS oder Supervised. Jede App hat ihre eigene Anleitung (auch im
+Reiter *Dokumentation* der App).
+
+**Lizenz:** [MIT](LICENSE). Kostenlos und ohne Gewähr. Enthaltene Software:
+[THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).

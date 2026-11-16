@@ -8,11 +8,13 @@ load – and create structured workouts that sync to your watch.
 
 The app runs an [MCP](https://modelcontextprotocol.io) server inside your
 Home Assistant, so your data goes straight from Garmin to your AI assistant
-without any third-party service in between.
+without any additional service in between.
 
 > **Unofficial.** Not affiliated with or endorsed by Garmin. It uses the same
 > private endpoints as the Garmin Connect website, which Garmin may change or
 > block at any time. Use at your own risk.
+
+> **Experimental** until version 1.0 – it works, but details may still change.
 
 ## Features
 
@@ -34,7 +36,7 @@ without any third-party service in between.
   from outside through this app.
 * **Protected endpoint:** only reachable via a long random secret URL, which you
   can rotate with one click.
-* **English and German** – app page, configuration, notifications and documentation;
+* **English and German** – app page, configuration, repair notices and documentation;
   more languages can be added without code ([TRANSLATING.md](TRANSLATING.md)).
 * Works with any AI app that supports remote MCP servers (Streamable HTTP).
 * Pre-built images for `amd64` and `aarch64` (Raspberry Pi 4/5).
@@ -69,6 +71,30 @@ Good to know:
 Full instructions: [DOCS.md](DOCS.md) (also shown in the
 app's *Documentation* tab).
 
+## Your data and security
+
+* **What the AI reads goes to your AI provider.** When your AI assistant uses a tool,
+  the result (e.g. sleep or heart rate data) is sent to that provider (Anthropic,
+  OpenAI, …) and handled under its privacy terms. Only enable what you want to share:
+  *Choose tools* on the app page, or the *Configuration* tab.
+* **Write access is limited by default** (`create_only`): the AI may create and
+  schedule workouts and add entries, but never delete or overwrite anything.
+  `read_only` and `full` are available.
+* **Treat the connector URL like a password.** Anyone who knows it can use the enabled
+  tools. Don't share screenshots or logs that contain it; if it leaks, click
+  **Generate new secret URL** on the app page.
+* **Your Garmin password is never stored** – only the tokens Garmin issues after login
+  (valid for about six months), kept in the app's private storage and in your Home
+  Assistant backups. *Log out and delete tokens* removes them from the app; to revoke
+  them at Garmin, change your Garmin password.
+* **The app cannot change Home Assistant:** no access to the Home Assistant API. Its only
+  access is the configuration folder, used solely to copy its helper integration. The MCP
+  server – the only part reachable from the internet – runs as an unprivileged user and
+  is locked into its own folders with Linux Landlock.
+
+Details: *Security* in [DOCS.md](DOCS.md). Found a vulnerability? Please report it
+privately – see [SECURITY.md](../SECURITY.md).
+
 ## Why does the app install an integration?
 
 AI assistants call MCP servers **from the internet**. From outside, usually only
@@ -76,17 +102,21 @@ Home Assistant itself is reachable (via Nabu Casa, Cloudflare Tunnel or a
 reverse proxy) – not the apps, which run in their own containers. And only
 code running *inside* Home Assistant can add an address there.
 
-So on first start the app installs a tiny helper integration
-(`custom_components/garmin_mcp_webhook`). It registers a Home Assistant
-**webhook** with a long random id (`/api/webhook/garmin_mcp_…`) and passes each
-request on, unchanged, to the app inside your network. It stores nothing,
-reads nothing else and logs nothing but errors.
+So on first start the app copies a tiny helper integration into Home Assistant
+(`custom_components/garmin_mcp_webhook`) and announces its settings through Home
+Assistant's official app discovery – Home Assistant then sets the integration up by
+itself. The integration registers a **webhook** with a long random id
+(`/api/webhook/garmin_mcp_…`) and passes each request on, unchanged, to the app inside
+your network. Once a minute it tells the app your external address and language (for
+the app page) and asks for the Garmin login state (for the repair notice). It stores
+nothing and logs nothing but errors.
 
 * Benefit: no extra hostname, tunnel or port forwarding.
-* Cost: one Home Assistant restart after installing (and after updates of the
-  helper). The app page and a repair notice tell you when.
-* Clean uninstall: when you uninstall the app, the helper notices within
-  10–20 minutes and removes itself, including its files – no restart needed.
+* Cost: one Home Assistant restart after installing (shown only on the app page) and
+  after updates of the helper (shown as a repair notice).
+* Clean uninstall: uninstall the app and Home Assistant removes the integration's entry
+  by itself; the helper then deletes its files – no restart needed. If Home Assistant
+  was off during the uninstall, this happens within 10–20 minutes after the next start.
 
 ## Remote access: webhook or direct
 
@@ -124,10 +154,26 @@ The connector URL changes when you switch – update it in your AI app.
 
 ## Requirements
 
-* Home Assistant OS or Supervised, version 2026.2 or newer
+* Home Assistant OS or Supervised, version 2026.2 or newer, on `amd64` or `aarch64`
+  (e.g. Raspberry Pi 4/5)
 * A Garmin Connect account
 * Home Assistant reachable over HTTPS from the internet (Nabu Casa, Cloudflare
   Tunnel, reverse proxy, …)
+* An AI app that supports remote MCP servers (Streamable HTTP), e.g. Claude or ChatGPT
+
+## Updates and uninstalling
+
+* **Updates** appear in Home Assistant like for any other app. What changed is in the
+  [changelog](CHANGELOG.md). If an update brings a new version of the helper
+  integration, a repair notice asks for one Home Assistant restart.
+* **Uninstalling:** just uninstall the app – the helper integration removes itself (see
+  above). Garmin tokens are deleted together with the app.
+
+## Help and feedback
+
+Problems or ideas: [open an issue](https://github.com/mw-hbg/ha-apps/issues). Please add
+the result of **Test connection** and the app log (*Log* tab) – but remove the connector
+URL from it first. Troubleshooting tips: [DOCS.md](DOCS.md).
 
 ## Development
 
@@ -137,8 +183,10 @@ The connector URL changes when you switch – update it in your AI app.
 * **Tests:** `pytest tests` (unit tests for the launcher and the helper
   integration); every push also builds both images and runs a smoke test of
   the container (`tests/smoke_test.sh`).
-* **Changes:** add an entry under `## Unreleased` in `CHANGELOG.md`. Never
-  change `version` in `config.yaml` by hand.
+* **Changes:** add an entry under `## Unreleased` in `CHANGELOG.md` – English first,
+  then the same in German below a `---` line. Never change `version` in `config.yaml`
+  by hand.
+* **Translations:** see [TRANSLATING.md](TRANSLATING.md).
 * **Releases:** *Actions → Release → Run workflow* with the new version. The
   workflow builds and pushes the images first, then sets the version,
   finishes the changelog, tags and publishes the release – so Home Assistant
