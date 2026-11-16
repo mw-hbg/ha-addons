@@ -25,6 +25,10 @@ von Garmin zu deinem KI-Assistenten.
   oder voller Zugriff – plus Freigabe- und Sperrlisten für einzelne Tools.
 * **Kein zusätzlicher Fernzugriff nötig:** erreichbar über die Adresse, mit der du
   Home Assistant ohnehin von außen nutzt – per Webhook.
+* **Verbindungstest** per Klick – Server, Garmin-Anmeldung und Connector-URL
+  aus dem Internet.
+* **Benachrichtigungen**, wenn ein Neustart nötig ist oder die Garmin-Anmeldung
+  abgelaufen ist.
 * **Geschützter Endpunkt:** nur über eine lange, zufällige geheime URL
   erreichbar, die du per Klick neu erzeugen kannst.
 * Funktioniert mit jeder KI-App, die Remote-MCP-Server (Streamable HTTP) unterstützt.

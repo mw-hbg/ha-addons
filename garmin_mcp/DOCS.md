@@ -35,8 +35,15 @@ AI assistant ──HTTPS──► your Home Assistant address ──► /api/web
 * Your Garmin password is never stored. After logging in, only the OAuth tokens
   Garmin issues are kept in the add-on's private storage (valid for about six
   months).
+* **Log out and delete tokens** removes the tokens from the add-on. Garmin
+  itself is not notified, so tokens that might have been copied elsewhere stay
+  valid until they expire. To revoke them everywhere, change your Garmin
+  password.
 
 ## Setup
+
+Requires Home Assistant **2026.2** or newer (OS or Supervised). The add-on is
+marked *experimental* until version 1.0.
 
 ### 1. Install and start
 
@@ -135,6 +142,25 @@ Copy the **Connector URL** from the add-on page. It looks like
   published IP addresses). Other AI services use other ranges and would be
   blocked by such a rule. Test after enabling it.
 
+## Connection test
+
+The **Test connection** button on the add-on page checks, one after another:
+
+1. the MCP server answers (and how many tools it offers),
+2. your Garmin account can be reached with the saved login,
+3. the connector URL works **from the internet** – the add-on calls its own
+   public address, exactly the way your AI app does.
+
+Each failed check comes with a hint what to do.
+
+## Notifications
+
+* **Restart required** – after installing, and after updates of the helper
+  integration (banner on the add-on page, notification, repair notice).
+* **Garmin login no longer valid** – e.g. when the tokens expired after about
+  six months or were revoked. Home Assistant shows a notification; log in again
+  on the add-on page. The AI app also gets a clear message instead of an error.
+
 ## Choosing tools
 
 The add-on page shows, per category, what the AI may do. **Choose tools** opens
@@ -144,7 +170,13 @@ tool and an **i** button explaining what each tool does and what kind of access
 it needs (read / create / change-delete). Saving restarts the server.
 
 A saved selection replaces `tool_areas`, `write_access`, `enable_tools` and
-`disable_tools` from the configuration. **Reset to configuration** on that page
+`disable_tools` from the configuration.
+
+**After updates:** tools that a new version brings are **switched off** in a
+saved selection. The add-on page and the tool list point them out (marked
+“new”) so you can decide. Tools the server does not classify are always
+treated as *change/delete* – they are never enabled by `read_only` or
+`create_only`. **Reset to configuration** on that page
 brings those options back into effect.
 
 ## Configuration
@@ -157,7 +189,7 @@ brings those options back into effect.
 | `disable_tools` | Individual tools that are never available, e.g. `delete_activity`. Always wins. |
 | `remote_access` | `webhook` (default) – reachable through your existing Home Assistant address, needs one Home Assistant restart. `direct` – you route your own HTTPS hostname to port 8100; switching to it removes the helper integration automatically. |
 | `public_url` | Optional. Your public Home Assistant address (webhook mode) or your own hostname (direct mode), only used to display the connector URL. |
-| `log_level` | `debug`, `info` (default), `warning`, `error`. |
+| `log_level` | `debug`, `info` (default), `warning`, `error`. Only `debug` also logs every single MCP request. |
 
 Changes take effect after restarting the add-on. The add-on page shows how many
 tools are active.
@@ -213,7 +245,7 @@ The MCP server is [Taxuspt/garmin_mcp](https://github.com/Taxuspt/garmin_mcp)
 ## All tools
 
 *Type*: **read** = only reads data · **create** = adds something new ·
-**delete / overwrite** = removes or changes existing data (only with
+**change/delete** = changes, overwrites or removes existing data (only with
 `write_access: full`). *Areas* lists the `tool_areas` that include the tool;
 `–` means only `all`.
 
@@ -232,16 +264,16 @@ The MCP server is [Taxuspt/garmin_mcp](https://github.com/Taxuspt/garmin_mcp)
 | `create_strength_workout` | create | workouts |
 | `create_walk_run_workout` | create | workouts |
 | `create_z2_walk_workout` | create | workouts |
-| `delete_activity` | delete / overwrite | activities |
-| `delete_course` | delete / overwrite | activities |
-| `delete_custom_food` | delete / overwrite | nutrition |
-| `delete_food_log` | delete / overwrite | nutrition |
-| `delete_weigh_ins` | delete / overwrite | health |
-| `delete_workout` | delete / overwrite | workouts |
-| `delete_workouts` | delete / overwrite | workouts |
-| `download_activity_file` | delete / overwrite | activities |
-| `download_course_gpx` | delete / overwrite | activities |
-| `download_workout` | delete / overwrite | workouts |
+| `delete_activity` | change/delete | activities |
+| `delete_course` | change/delete | activities |
+| `delete_custom_food` | change/delete | nutrition |
+| `delete_food_log` | change/delete | nutrition |
+| `delete_weigh_ins` | change/delete | health |
+| `delete_workout` | change/delete | workouts |
+| `delete_workouts` | change/delete | workouts |
+| `download_activity_file` | change/delete | activities |
+| `download_course_gpx` | change/delete | activities |
+| `download_workout` | change/delete | workouts |
 | `get_acclimation` | read | training |
 | `get_activities` | read | minimal, activities |
 | `get_activities_by_date` | read | minimal, activities |
@@ -351,27 +383,27 @@ The MCP server is [Taxuspt/garmin_mcp](https://github.com/Taxuspt/garmin_mcp)
 | `log_custom_food` | create | nutrition |
 | `log_food` | create | nutrition |
 | `push_workout_to_device` | create | – |
-| `remove_gear_from_activity` | delete / overwrite | activities |
+| `remove_gear_from_activity` | change/delete | activities |
 | `request_reload` | create | training |
-| `reschedule_workout` | delete / overwrite | – |
+| `reschedule_workout` | change/delete | – |
 | `schedule_week` | create | workouts |
 | `schedule_workout` | create | workouts |
 | `schedule_workouts` | create | workouts |
 | `search_foods` | read | nutrition |
-| `set_activity_description` | delete / overwrite | activities |
-| `set_activity_event_type` | delete / overwrite | activities |
-| `set_activity_exercise_sets` | delete / overwrite | activities |
-| `set_activity_feel` | delete / overwrite | activities |
-| `set_activity_name` | delete / overwrite | activities |
-| `set_activity_type` | delete / overwrite | activities |
+| `set_activity_description` | change/delete | activities |
+| `set_activity_event_type` | change/delete | activities |
+| `set_activity_exercise_sets` | change/delete | activities |
+| `set_activity_feel` | change/delete | activities |
+| `set_activity_name` | change/delete | activities |
+| `set_activity_type` | change/delete | activities |
 | `set_blood_pressure` | create | health |
 | `set_fit_download_dir` | create | activities |
-| `set_heart_rate_zones` | delete / overwrite | – |
-| `set_nutrition_daily_settings` | delete / overwrite | nutrition |
-| `set_perceived_effort` | delete / overwrite | activities |
-| `unschedule_workout` | delete / overwrite | workouts |
-| `unschedule_workouts` | delete / overwrite | workouts |
-| `update_custom_food` | delete / overwrite | nutrition |
+| `set_heart_rate_zones` | change/delete | – |
+| `set_nutrition_daily_settings` | change/delete | nutrition |
+| `set_perceived_effort` | change/delete | activities |
+| `unschedule_workout` | change/delete | workouts |
+| `unschedule_workouts` | change/delete | workouts |
+| `update_custom_food` | change/delete | nutrition |
 | `upload_course` | create | activities |
 | `upload_workout` | create | workouts |
 | `upload_workouts` | create | workouts |

@@ -78,7 +78,7 @@ WEBHOOK_CONFIG = HA_CONFIG / ".garmin_mcp_webhook.json"
 WEBHOOK_ID_FILE = DATA / "webhook_id"
 WEBHOOK_DOMAIN = "garmin_mcp_webhook"
 
-ALL_TOOLS = READ_ONLY_TOOLS | ADDITIVE_TOOLS | DESTRUCTIVE_TOOLS
+log = logging.getLogger("garmin_mcp_addon")
 SELECTION_FILE = DATA / "tool_selection.json"
 
 
@@ -104,32 +104,78 @@ def _build_catalog() -> list[dict]:
         def __getattr__(self, _name):
             return lambda *a, **k: (lambda fn: fn)
 
-    for module in tool_texts.CATEGORIES:
+    import pkgutil
+
+    import garmin_mcp as _pkg
+
+    # Every module of the server that registers tools – including modules a
+    # future update adds, so no tool can escape the access rules.
+    # Skip __main__ (it starts the server) and the auth command line tool.
+    modules = [
+        m.name for m in pkgutil.iter_modules(_pkg.__path__)
+        if not m.name.startswith("_") and m.name not in ("auth_cli",)
+    ]
+    for module in modules:
         try:
-            importlib.import_module(f"garmin_mcp.{module}").register_tools(_Collector(module))
+            mod = importlib.import_module(f"garmin_mcp.{module}")
+        except Exception as exc:  # noqa: BLE001
+            log.warning("Could not load garmin_mcp.%s: %s", module, exc)
+            continue
+        if not callable(getattr(mod, "register_tools", None)):
+            continue
+        try:
+            mod.register_tools(_Collector(module if module in tool_texts.CATEGORIES else "other"))
         except Exception as exc:  # noqa: BLE001
             log.warning("Could not read tool list of %s: %s", module, exc)
     for entry in entries:
-        name = entry["name"]
-        entry["kind"] = (
-            "read" if name in READ_ONLY_TOOLS else "create" if name in ADDITIVE_TOOLS else "change"
-        )
+        entry["kind"] = kind_of(entry["name"])
     return entries
 
 
-CATALOG: list[dict] = []  # filled in main()
+def kind_of(name: str) -> str:
+    """read / create / change. Tools upstream has not classified count as
+    'change' (most restrictive), so a new write tool can never slip through
+    read_only or create_only."""
+    if name in READ_ONLY_TOOLS:
+        return "read"
+    if name in ADDITIVE_TOOLS:
+        return "create"
+    return "change"
 
 
-def load_selection() -> set[str] | None:
-    """Tools picked on the add-on page, or None if the user never saved a selection."""
+# The tools the server actually registers – not only the classified ones.
+CATALOG: list[dict] = _build_catalog()
+ALL_TOOLS = frozenset(e["name"] for e in CATALOG) | READ_ONLY_TOOLS | ADDITIVE_TOOLS | DESTRUCTIVE_TOOLS
+_UNCLASSIFIED = sorted(n for n in ALL_TOOLS if n not in READ_ONLY_TOOLS | ADDITIVE_TOOLS | DESTRUCTIVE_TOOLS)
+
+
+def load_selection() -> tuple[set[str], set[str]] | None:
+    """(picked tools, tools that existed when the user saved) or None if the
+    user never saved a selection on the add-on page."""
     try:
-        names = json.loads(SELECTION_FILE.read_text())
+        data = json.loads(SELECTION_FILE.read_text())
     except (FileNotFoundError, ValueError):
         return None
-    return {str(n) for n in names} & ALL_TOOLS
-MFA_TIMEOUT = 600  # seconds a started MFA login stays valid
+    if isinstance(data, list):  # format of 0.2.x
+        return {str(n) for n in data} & ALL_TOOLS, set()
+    picked = {str(n) for n in data.get("enabled", [])} & ALL_TOOLS
+    known = {str(n) for n in data.get("known", [])}
+    return picked, known
 
-log = logging.getLogger("garmin_mcp_addon")
+
+def save_selection(picked: set[str]) -> None:
+    SELECTION_FILE.write_text(
+        json.dumps({"enabled": sorted(picked & ALL_TOOLS), "known": sorted(ALL_TOOLS)})
+    )
+
+
+def new_tools() -> list[str]:
+    """Tools added (by an update) since the user saved their selection."""
+    sel = load_selection()
+    if sel is None or not sel[1]:
+        return []
+    return sorted(ALL_TOOLS - sel[1])
+MFA_TIMEOUT = 600  # seconds a started MFA login stays valid
 
 
 # --------------------------------------------------------------------------
@@ -163,8 +209,9 @@ def _names(values) -> set[str]:
 
 def tool_selection(options: dict) -> tuple[dict, set[str]]:
     """Return (environment for garmin-mcp, set of tools that will be active)."""
-    picked = load_selection()
-    if picked is not None:
+    sel = load_selection()
+    if sel is not None:
+        picked = sel[0]
         return {"GARMIN_DISABLED_TOOLS": ",".join(sorted(ALL_TOOLS - picked))}, picked
     areas = [a.strip().lower() for a in options.get("tool_areas") or ["all"] if a.strip()]
     if not areas or "all" in areas:
@@ -173,11 +220,11 @@ def tool_selection(options: dict) -> tuple[dict, set[str]]:
 
     write_access = options.get("write_access", "create_only")
     if write_access == "read_only":
-        blocked = set(ADDITIVE_TOOLS | DESTRUCTIVE_TOOLS)
+        blocked = {n for n in ALL_TOOLS if kind_of(n) != "read"}
     elif write_access == "full":
         blocked = set()
     else:  # create_only (default)
-        blocked = set(DESTRUCTIVE_TOOLS)
+        blocked = {n for n in ALL_TOOLS if kind_of(n) == "change"}
 
     enable = _names(options.get("enable_tools"))
     disable = _names(options.get("disable_tools"))
@@ -310,6 +357,7 @@ class Services:
         self.mcp_env, self.active_tools = tool_selection(self.options)
         self.secret = get_secret()
         self._mcp_failures = 0
+        self._login_alert = False
 
     # nginx ---------------------------------------------------------------
     def write_nginx_conf(self) -> None:
@@ -359,7 +407,10 @@ class Services:
             )
             for key in ("GARMIN_EMAIL", "GARMIN_PASSWORD"):
                 env.pop(key, None)
-            self.mcp = subprocess.Popen(["garmin-mcp"], env=env)
+            level = str(self.options.get("log_level", "info")).lower()
+            env["GARMIN_ADDON_LOG_LEVEL"] = "DEBUG" if level == "debug" else "WARNING"
+            run_mcp = Path(__file__).resolve().parent / "run_mcp.py"
+            self.mcp = subprocess.Popen([sys.executable, str(run_mcp)], env=env)
             log.info(
                 "garmin-mcp started (%d tools active, write access: %s)",
                 len(self.active_tools),
@@ -403,9 +454,47 @@ class Services:
             return "pending"
 
     # supervision ---------------------------------------------------------
+    def _check_login(self) -> None:
+        """Tell the user in Home Assistant when the Garmin login stops working."""
+        state = self.mcp_state() if has_tokens() else "stopped"
+        if state == "failed" and not self._login_alert:
+            log.warning("Garmin login failed – asking the user to log in again")
+            core_api(
+                "POST",
+                "/services/persistent_notification/create",
+                {
+                    "notification_id": "garmin_mcp_login",
+                    "title": "Garmin Connect MCP",
+                    "message": (
+                        "The Garmin Connect login is no longer valid – the AI cannot read your "
+                        "Garmin data. Open **Garmin MCP** in the sidebar and log in again. / "
+                        "Die Anmeldung bei Garmin Connect ist nicht mehr gültig – die KI kann "
+                        "nicht auf deine Garmin-Daten zugreifen. Öffne **Garmin MCP** in der "
+                        "Seitenleiste und melde dich neu an."
+                    ),
+                },
+                quiet=True,
+            )
+            self._login_alert = True
+        elif state == "ready" and self._login_alert:
+            core_api(
+                "POST",
+                "/services/persistent_notification/dismiss",
+                {"notification_id": "garmin_mcp_login"},
+                quiet=True,
+            )
+            self._login_alert = False
+
     def supervise(self) -> None:
+        ticks = 0
         while not self.stopping:
             time.sleep(5)
+            ticks += 1
+            if ticks % 12 == 0:  # once a minute
+                try:
+                    self._check_login()
+                except Exception as exc:  # noqa: BLE001
+                    log.debug("Login check failed: %s", exc)
             with self.lock:
                 if self.stopping:
                     return
@@ -675,6 +764,95 @@ class RemoteAccess:
         core_api("POST", "/services/homeassistant/restart", {})
 
 
+# --------------------------------------------------------------------------
+# Connection test
+# --------------------------------------------------------------------------
+TEST_RESULT: dict = {}
+
+
+def _mcp_request(url: str, payload: dict, host_header: str | None = None, timeout: int = 20):
+    headers = {
+        "Content-Type": "application/json",
+        "Accept": "application/json, text/event-stream",
+    }
+    if host_header:
+        headers["Host"] = host_header
+    req = urllib.request.Request(url, data=json.dumps(payload).encode(), headers=headers, method="POST")
+    with urllib.request.urlopen(req, timeout=timeout) as resp:
+        raw = resp.read().decode()
+    lines = [line[5:].strip() for line in raw.splitlines() if line.startswith("data:")]
+    return json.loads(lines[0] if lines else raw)
+
+
+def run_connection_test() -> dict:
+    """Check server, Garmin account and the public connector URL, one by one."""
+    result: dict = {"time": time.strftime("%H:%M:%S"), "checks": []}
+
+    def add(key: str, ok: bool, detail: str = "") -> None:
+        result["checks"].append({"key": key, "ok": ok, "detail": detail})
+
+    # 1. MCP server answers locally
+    try:
+        data = _mcp_request(
+            f"http://127.0.0.1:{MCP_PORT}/mcp",
+            {"jsonrpc": "2.0", "id": 1, "method": "tools/list"},
+            host_header=f"127.0.0.1:{MCP_PORT}",
+        )
+        add("test_server", True, str(len(data["result"]["tools"])))
+    except Exception as exc:  # noqa: BLE001
+        add("test_server", False, type(exc).__name__)
+
+    # 2. Garmin account reachable with the saved tokens
+    if not has_tokens():
+        add("test_garmin", False, "@not_logged_in")
+    else:
+        try:
+            client = Garmin()
+            client.login(str(TOKEN_DIR))
+            add("test_garmin", True, client.full_name or client.display_name or "")
+        except Exception as exc:  # noqa: BLE001
+            text = str(exc)
+            if isinstance(exc, GarminConnectAuthenticationError) or "password" in text.lower() or "401" in text:
+                add("test_garmin", False, "@relogin")
+            else:
+                add("test_garmin", False, text[:160])
+
+    # 3. The connector URL works from the internet (round trip via your
+    #    public address, exactly like the AI app reaches it)
+    if REMOTE.enabled:
+        base = REMOTE.base_url()
+        url = f"{base}/api/webhook/{REMOTE.webhook_id}" if base else ""
+    else:
+        public = (SERVICES.options.get("public_url") or "").strip().rstrip("/")
+        if public and "://" not in public:
+            public = "https://" + public
+        url = f"{public}/{SERVICES.secret}/mcp" if public else ""
+    if not url:
+        add("test_public", False, "@no_public")
+    else:
+        try:
+            data = _mcp_request(
+                url,
+                {
+                    "jsonrpc": "2.0",
+                    "id": 1,
+                    "method": "initialize",
+                    "params": {
+                        "protocolVersion": "2025-06-18",
+                        "capabilities": {},
+                        "clientInfo": {"name": "garmin-mcp-addon-selftest", "version": "1"},
+                    },
+                },
+            )
+            add("test_public", "result" in data, data.get("result", {}).get("serverInfo", {}).get("name", ""))
+        except urllib.error.HTTPError as exc:
+            add("test_public", False, f"HTTP {exc.code}")
+        except Exception as exc:  # noqa: BLE001
+            add("test_public", False, type(exc).__name__)
+    result["ok"] = all(c["ok"] for c in result["checks"])
+    return result
+
+
 SERVICES: Services  # set in main()
 REMOTE: RemoteAccess  # set in main()
 
@@ -864,6 +1042,23 @@ TEXT = {
         "ok_tools": "Selection saved. The server is restarting.",
         "ok_tools_reset": "Selection reset – the configuration applies again.",
         "cleaned_up": "Remote access is set to “direct”: the helper integration for the webhook was removed from Home Assistant. No restart needed.",
+        "new_tools_hint": "{n} new tools since you saved your selection – they are switched off.",
+        "new_tools_banner": "An update added {n} new tools (marked “new”). They stay switched off until you tick them and save.",
+        "new": "new",
+        "review": "Review",
+        "docs": "Documentation",
+        "test_title": "Connection test",
+        "test_intro": "Checks the server, your Garmin login and the connector URL from the internet – exactly the way your AI app reaches it.",
+        "test_run": "Test connection",
+        "test_busy": "Testing … (up to 30 s)",
+        "test_ok": "Everything works.",
+        "test_failed": "Something is not working:",
+        "test_server": "MCP server answers (tools)",
+        "test_garmin": "Garmin account reachable",
+        "test_public": "Connector URL reachable from the internet",
+        "detail_not_logged_in": "not logged in – log in above",
+        "detail_relogin": "login no longer valid – log out and log in again",
+        "detail_no_public": "public address unknown – set “Public base URL” in the configuration",
         "remote": "Remote access",
         "remote_active": "Active – via your Home Assistant address",
         "remote_setting_up": "Setting up …",
@@ -962,6 +1157,23 @@ TEXT = {
         "ok_tools": "Auswahl gespeichert. Der Server startet neu.",
         "ok_tools_reset": "Auswahl zurückgesetzt – es gilt wieder die Konfiguration.",
         "cleaned_up": "Fernzugriff steht auf „direct“: Die Hilfs-Integration für den Webhook wurde aus Home Assistant entfernt. Ein Neustart ist nicht nötig.",
+        "new_tools_hint": "{n} neue Tools seit deiner gespeicherten Auswahl – sie sind ausgeschaltet.",
+        "new_tools_banner": "Ein Update hat {n} neue Tools gebracht (markiert mit „neu“). Sie bleiben aus, bis du sie anhakst und speicherst.",
+        "new": "neu",
+        "review": "Ansehen",
+        "docs": "Dokumentation",
+        "test_title": "Verbindungstest",
+        "test_intro": "Prüft den Server, deine Garmin-Anmeldung und die Connector-URL aus dem Internet – genau so, wie deine KI-App sie erreicht.",
+        "test_run": "Verbindung testen",
+        "test_busy": "Teste … (bis zu 30 s)",
+        "test_ok": "Alles funktioniert.",
+        "test_failed": "Etwas funktioniert nicht:",
+        "test_server": "MCP-Server antwortet (Tools)",
+        "test_garmin": "Garmin-Konto erreichbar",
+        "test_public": "Connector-URL aus dem Internet erreichbar",
+        "detail_not_logged_in": "nicht angemeldet – oben anmelden",
+        "detail_relogin": "Anmeldung nicht mehr gültig – abmelden und neu anmelden",
+        "detail_no_public": "öffentliche Adresse unbekannt – „Öffentliche Adresse“ in der Konfiguration eintragen",
         "remote": "Fernzugriff",
         "remote_active": "Aktiv – über deine Home-Assistant-Adresse",
         "remote_setting_up": "Wird eingerichtet …",
@@ -1008,6 +1220,8 @@ a.btn.secondary{background:transparent;color:var(--accent);border:1px solid var(
 .infobox.open{display:block}
 summary{cursor:pointer;font-weight:600;padding:6px 0}
 .savebar{position:sticky;bottom:0;background:var(--bg);padding:10px 0;display:flex;gap:10px;flex-wrap:wrap;align-items:center}
+.footer{text-align:center;font-size:12px;margin-top:8px}
+.badge.new{color:var(--warn);border-color:var(--warn)}
 .busy-note{display:none;margin-top:10px}button:disabled{opacity:.6;cursor:wait}
 .banner{padding:14px 16px;border-radius:12px;margin-bottom:16px;border:2px solid var(--warn)}
 .flash{padding:10px 14px;border-radius:8px;margin-bottom:16px;border:1px solid var(--border)}
@@ -1148,9 +1362,30 @@ async def index(request: Request) -> Response:
         f'<tr><td class="muted">{t["state"]}</td><td class="{state_cls}">{t["state_" + state]}</td></tr>'
         f'<tr><td class="muted">{t["tools"]}</td><td>{len(services.active_tools)} / {len(ALL_TOOLS)}</td></tr>'
         f'<tr><td class="muted">{t["write_access"]}</td><td>{rights}</td></tr>'
-        f'</table><h3>{t["what_ai_may"]}</h3><table class="cats">{"".join(rows)}</table>'
+        f'</table>'
+        + (f'<p class="warn">{t["new_tools_hint"].format(n=len(fresh))} <a href="tools">{t["review"]}</a></p>' if (fresh := new_tools()) else "")
+        + f'<h3>{t["what_ai_may"]}</h3><table class="cats">{"".join(rows)}</table>'
         f'<div class="row links"><a class="btn" href="tools">{t["choose_tools"]}</a>'
         f'<a class="btn secondary" href="{_config_url()}" target="_top">{t["open_config"]}</a></div></div>'
+    )
+
+    # Connection test card
+    test_html = ""
+    if TEST_RESULT:
+        items = "".join(
+            f'<tr><td>{"✅" if c["ok"] else "❌"}</td><td>{t[c["key"]]}</td>'
+            f'<td class="muted">{t.get("detail_" + c["detail"][1:], "") if c["detail"].startswith("@") else html.escape(c["detail"])}</td></tr>'
+            for c in TEST_RESULT["checks"]
+        )
+        test_html = (
+            f'<p class="{"ok" if TEST_RESULT["ok"] else "err"}">'
+            f'{t["test_ok"] if TEST_RESULT["ok"] else t["test_failed"]} ({TEST_RESULT["time"]})</p>'
+            f'<table>{items}</table>'
+        )
+    parts.append(
+        f'<div class="card"><h2>{t["test_title"]}</h2><p class="muted">{t["test_intro"]}</p>{test_html}'
+        f'<form method="post" action="test" onsubmit="return busy(this)">{csrf}'
+        f'<button type="submit" class="secondary" data-busy="{t["test_busy"]}">{t["test_run"]}</button></form></div>'
     )
 
     # Connection card
@@ -1194,6 +1429,10 @@ async def index(request: Request) -> Response:
         )
     parts.append("</div>")
 
+    parts.append(
+        f'<p class="muted footer">Garmin Connect MCP {html.escape(os.environ.get("ADDON_VERSION", "dev"))}'
+        f' · <a href="https://github.com/mw-hbg/ha-addons/blob/main/garmin_mcp/DOCS.md" target="_blank" rel="noopener">{t["docs"]}</a></p>'
+    )
     body = "".join(parts)
     page = (
         f'<!doctype html><html lang="{_lang(request)}"><head><meta charset="utf-8">'
@@ -1309,6 +1548,9 @@ async def tools_page(request: Request) -> Response:
     if FLASH:
         parts.append(f'<div class="flash {FLASH.get("kind", "ok")}">{t.get(FLASH.get("key", ""), "")}</div>')
         FLASH.clear()
+    fresh = set(new_tools())
+    if fresh:
+        parts.append(f'<div class="banner">{t["new_tools_banner"].format(n=len(fresh))}</div>')
     parts.append(
         f'<p class="muted">{t["tools_intro"]}</p>'
         f'<div class="toolbar"><input type="search" placeholder="{t["search"]}" oninput="filt(this.value)">'
@@ -1333,6 +1575,8 @@ async def tools_page(request: Request) -> Response:
                 f'<input type="checkbox" name="tool" value="{e["name"]}" data-kind="{e["kind"]}" id="t_{e["name"]}"{checked}>'
                 f'<div class="txt"><label for="t_{e["name"]}" style="margin:0;color:inherit;font-size:14px">{html.escape(label)}</label>'
                 f' <span class="badge {e["kind"]}">{t["kind_" + e["kind"]]}</span>'
+                + (f' <span class="badge new">{t["new"]}</span>' if e["name"] in fresh else "")
+                +
                 f'<div class="infobox"><b>{t["info_name"]}:</b> <code>{e["name"]}</code><br>'
                 f'<b>{t["info_kind"]}:</b> {t["info_kind_" + e["kind"]]}'
                 + (f'<br><b>{t["info_original"]}:</b> {html.escape(e["doc"])}' if lang == "de" and e["doc"] else "")
@@ -1359,8 +1603,8 @@ async def save_tools(request: Request) -> Response:
     if not secrets.compare_digest(str(form.get("csrf", "")), CSRF_TOKEN):
         FLASH.update(kind="err", key="err_csrf")
     else:
-        picked = sorted({str(v) for v in form.getlist("tool")} & ALL_TOOLS)
-        SELECTION_FILE.write_text(json.dumps(picked))
+        picked = {str(v) for v in form.getlist("tool")} & ALL_TOOLS
+        save_selection(picked)
         log.info("Tool selection saved (%d tools)", len(picked))
         await anyio.to_thread.run_sync(SERVICES.reload_tools)
         FLASH.update(kind="ok", key="ok_tools")
@@ -1377,6 +1621,15 @@ async def reset_tools(request: Request) -> Response:
         FLASH.update(kind="ok", key="ok_tools_reset")
     base = request.headers.get("x-ingress-path", "")
     return RedirectResponse(f"{base}/tools", status_code=303)
+
+
+async def do_test(request: Request) -> Response:
+    if (denied := _guard(request)) is not None:
+        return denied
+    if await _form(request) is not None:
+        TEST_RESULT.clear()
+        TEST_RESULT.update(await anyio.to_thread.run_sync(run_connection_test))
+    return _redirect(request)
 
 
 async def status(request: Request) -> Response:
@@ -1402,6 +1655,7 @@ app = Starlette(
         Route("/logout", do_logout, methods=["POST"]),
         Route("/rotate", do_rotate, methods=["POST"]),
         Route("/restart-ha", do_restart_ha, methods=["POST"]),
+        Route("/test", do_test, methods=["POST"]),
         Route("/status.json", status),
         Route("/tools", tools_page),
         Route("/tools", save_tools, methods=["POST"]),
@@ -1422,8 +1676,11 @@ def main() -> None:
     )
     DATA.mkdir(parents=True, exist_ok=True)
 
-    global CATALOG
-    CATALOG = _build_catalog()
+    if _UNCLASSIFIED:
+        log.warning(
+            "Tools without access classification (treated as change/delete): %s",
+            ", ".join(_UNCLASSIFIED),
+        )
     SERVICES = Services()
     SERVICES.start_nginx()
     SERVICES.start_mcp()

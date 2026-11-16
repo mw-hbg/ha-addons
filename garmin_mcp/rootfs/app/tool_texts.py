@@ -22,6 +22,7 @@ CATEGORIES = {
     "nutrition": (14, "Nutrition", "Ernährung"),
     "womens_health": (15, "Women's health", "Frauengesundheit"),
     "user_profile": (16, "Profile & settings", "Profil & Einstellungen"),
+    "other": (17, "Other / new", "Sonstiges / neu"),
 }
 
 DE = {

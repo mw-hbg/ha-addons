@@ -24,6 +24,9 @@ without any third-party service in between.
   or full access – plus per-tool allow/deny lists.
 * **No extra remote setup:** reachable through the address you already use for
   Home Assistant (Nabu Casa, Cloudflare Tunnel, reverse proxy …) via a webhook.
+* **Connection test** with one click – server, Garmin login and connector URL
+  from the internet.
+* **Notifications** when a restart is needed or the Garmin login expired.
 * **Protected endpoint:** only reachable via a long random secret URL, which you
   can rotate with one click.
 * Works with any AI app that supports remote MCP servers (Streamable HTTP).
@@ -106,7 +109,7 @@ The connector URL changes when you switch – update it in your AI app.
 
 ## Requirements
 
-* Home Assistant OS or Supervised (add-on support)
+* Home Assistant OS or Supervised, version 2026.2 or newer
 * A Garmin Connect account
 * Home Assistant reachable over HTTPS from the internet (Nabu Casa, Cloudflare
   Tunnel, reverse proxy, …)

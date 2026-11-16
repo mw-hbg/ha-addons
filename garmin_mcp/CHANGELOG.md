@@ -1,5 +1,27 @@
 # Changelog
 
+## 0.3.0
+
+Fixes
+- Tool protection now covers every tool the server registers. Tools without an access
+  classification (e.g. added by a future server update) count as change/delete and are never
+  enabled by `read_only` or `create_only`.
+- Messages to the AI no longer point to the `garmin-mcp-auth` command line tool; when the
+  Garmin login is invalid they ask the user to log in again on the add-on page.
+- Home Assistant notification when the Garmin login stops working (dismissed automatically
+  after logging in again).
+
+Changes
+- Requires Home Assistant 2026.2 or newer; marked as experimental until 1.0.
+- `log_level` now also applies to the MCP server (per-request lines only with `debug`).
+- Consistent wording "change/delete"; docs explain that logging out does not revoke tokens at Garmin.
+
+New
+- "Test connection": checks the server, the Garmin login and the connector URL from the internet.
+- Supervisor watchdog restarts the add-on if its web UI stops answering.
+- Add-on version and documentation link on the add-on page.
+- After updates, new tools are switched off in a saved selection and marked "new".
+
 ## 0.2.3
 
 - Switching remote access to `direct` now cleans up: on the next start the add-on removes its
