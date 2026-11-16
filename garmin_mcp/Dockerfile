@@ -15,15 +15,17 @@ ENV ADDON_VERSION=${BUILD_VERSION} \
     PIP_NO_CACHE_DIR=1 \
     PIP_DISABLE_PIP_VERSION_CHECK=1
 
+COPY constraints.txt /tmp/constraints.txt
+
 RUN set -eux; \
     apt-get update; \
     apt-get install -y --no-install-recommends nginx git ca-certificates; \
-    pip install \
+    pip install -c /tmp/constraints.txt \
         "garmin-mcp @ git+https://github.com/Taxuspt/garmin_mcp@${UPSTREAM_REF}" \
-        "uvicorn>=0.30" "starlette>=0.40" "python-multipart>=0.0.9"; \
+        uvicorn starlette python-multipart; \
     apt-get purge -y git; \
     apt-get autoremove -y; \
-    rm -rf /var/lib/apt/lists/* /etc/nginx/sites-enabled /root/.cache; \
+    rm -rf /var/lib/apt/lists/* /etc/nginx/sites-enabled /root/.cache /tmp/constraints.txt; \
     python -c "import garmin_mcp, garmin_mcp.tool_annotations, curl_cffi"
 
 COPY rootfs/ /

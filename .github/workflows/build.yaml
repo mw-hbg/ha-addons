@@ -31,7 +31,8 @@ jobs:
       - name: Install dependencies (same pinned server as the image)
         run: |
           ref=$(grep -oP '^ARG UPSTREAM_REF=\K\S+' garmin_mcp/Dockerfile)
-          pip install "garmin-mcp @ git+https://github.com/Taxuspt/garmin_mcp@${ref}" \
+          pip install -c garmin_mcp/constraints.txt \
+            "garmin-mcp @ git+https://github.com/Taxuspt/garmin_mcp@${ref}" \
             uvicorn starlette python-multipart aiohttp httpx pytest
       - name: Run tests
         run: pytest -q tests

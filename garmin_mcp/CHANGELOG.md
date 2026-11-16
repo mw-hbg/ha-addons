@@ -5,6 +5,18 @@
 - Security: nginx could write the secret path to the add-on log when the server was not
   reachable for a moment (e.g. during a restart). nginx now only logs critical errors.
   If you shared your add-on log, generate a new secret URL.
+- Security: file tools (`upload_course`, `download_course_gpx`, `download_activity_file`,
+  `set_fit_download_dir`) can only read and write inside the add-on's download folder.
+  Before, an AI could upload any readable file (e.g. from the Home Assistant config folder)
+  as a course or write files into it.
+- Security: the MCP server no longer receives the Home Assistant Supervisor token or any
+  other secret from the environment.
+- Security: files with secrets (secret URL, webhook ID, Garmin account, tool selection) are
+  written atomically and readable only by the add-on.
+- Security: at most 5 login attempts per 15 minutes; a half-finished 2FA login expires.
+- Stability: if the Garmin login fails temporarily (e.g. Garmin down), the server retries
+  automatically with growing pauses; the notification only appears if it keeps failing.
+- Stability: all Python dependencies are pinned, so a rebuild produces the same image.
 
 - Automated tests for every change: unit tests (tool protection, selection, texts, helper
   integration) and a smoke test of the built image.

@@ -164,8 +164,9 @@ def load_selection() -> tuple[set[str], set[str]] | None:
 
 
 def save_selection(picked: set[str]) -> None:
-    SELECTION_FILE.write_text(
-        json.dumps({"enabled": sorted(picked & ALL_TOOLS), "known": sorted(ALL_TOOLS)})
+    write_private(
+        SELECTION_FILE,
+        json.dumps({"enabled": sorted(picked & ALL_TOOLS), "known": sorted(ALL_TOOLS)}),
     )
 
 
@@ -250,14 +251,26 @@ def tool_selection(options: dict) -> tuple[dict, set[str]]:
 # --------------------------------------------------------------------------
 # Secret path, account info
 # --------------------------------------------------------------------------
+def write_private(path: Path, content: str) -> None:
+    """Write a file atomically and readable by its owner only (no window in
+    which a secret sits on disk with default permissions)."""
+    tmp = path.with_name(f".{path.name}.tmp")
+    fd = os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+    with os.fdopen(fd, "w") as fh:
+        fh.write(content)
+        fh.flush()
+        os.fsync(fh.fileno())
+    os.chmod(tmp, 0o600)
+    os.replace(tmp, path)
+
+
 def get_secret(rotate: bool = False) -> str:
     if not rotate and SECRET_FILE.exists():
         value = SECRET_FILE.read_text().strip()
         if len(value) >= 24:
             return value
     value = secrets.token_urlsafe(32)
-    SECRET_FILE.write_text(value)
-    os.chmod(SECRET_FILE, 0o600)
+    write_private(SECRET_FILE, value)
     log.info("Generated a new secret path")
     return value
 
@@ -268,8 +281,7 @@ def get_webhook_id(rotate: bool = False) -> str:
         if len(value) >= 24:
             return value
     value = "garmin_mcp_" + secrets.token_urlsafe(32)
-    WEBHOOK_ID_FILE.write_text(value)
-    os.chmod(WEBHOOK_ID_FILE, 0o600)
+    write_private(WEBHOOK_ID_FILE, value)
     return value
 
 
@@ -359,6 +371,8 @@ class Services:
         self.secret = get_secret()
         self._mcp_failures = 0
         self._login_alert = False
+        self._login_failures = 0
+        self._next_login_retry = 0.0
 
     # nginx ---------------------------------------------------------------
     def write_nginx_conf(self) -> None:
@@ -406,12 +420,21 @@ class Services:
                     "HOME": str(DATA),
                 }
             )
-            for key in ("GARMIN_EMAIL", "GARMIN_PASSWORD"):
-                env.pop(key, None)
+            # The MCP server is reachable from the internet and runs tools on
+            # behalf of an AI – it must not hold the Supervisor token (which
+            # grants access to the Home Assistant API) or any credentials.
+            for key in list(env):
+                upper = key.upper()
+                sensitive = upper in ("GARMIN_EMAIL", "GARMIN_PASSWORD") or (
+                    ("TOKEN" in upper or "SECRET" in upper or "PASSWORD" in upper)
+                    and upper not in ("GARMINTOKENS", "GARMINTOKENS_BASE64")
+                )
+                if sensitive:
+                    env.pop(key, None)
             level = str(self.options.get("log_level", "info")).lower()
             env["GARMIN_ADDON_LOG_LEVEL"] = "DEBUG" if level == "debug" else "WARNING"
             run_mcp = Path(__file__).resolve().parent / "run_mcp.py"
-            self.mcp = subprocess.Popen([sys.executable, str(run_mcp)], env=env)
+            self.mcp = subprocess.Popen([sys.executable, str(run_mcp)], env=env, cwd=str(DOWNLOAD_DIR))
             log.info(
                 "garmin-mcp started (%d tools active, write access: %s)",
                 len(self.active_tools),
@@ -432,6 +455,11 @@ class Services:
         self.stop_mcp()
         self._mcp_failures = 0
         self.start_mcp()
+
+    def reset_login_state(self) -> None:
+        """After a fresh login: forget earlier failures and alerts."""
+        self._login_failures = 0
+        self._next_login_retry = 0.0
 
     def reload_tools(self) -> None:
         self.mcp_env, self.active_tools = tool_selection(self.options)
@@ -458,7 +486,22 @@ class Services:
     def _check_login(self) -> None:
         """Tell the user in Home Assistant when the Garmin login stops working."""
         state = self.mcp_state() if has_tokens() else "stopped"
-        if state == "failed" and not self._login_alert:
+        if state == "ready":
+            self._login_failures = 0
+        if state == "failed" and time.time() >= self._next_login_retry:
+            # A failed start is often temporary (no internet yet after a power
+            # cut, Garmin briefly down). Retry with growing pauses before
+            # bothering the user: 2, 10, 30, then every 60 minutes.
+            self._login_failures += 1
+            pause = (120, 600, 1800, 3600)[min(self._login_failures - 1, 3)]
+            self._next_login_retry = time.time() + pause
+            log.warning(
+                "Garmin login failed (attempt %d) – restarting the server, next try in %d min",
+                self._login_failures,
+                pause // 60,
+            )
+            self.restart_mcp()
+        if state == "failed" and self._login_failures >= 2 and not self._login_alert:
             log.warning("Garmin login failed – asking the user to log in again")
             core_api(
                 "POST",
@@ -493,6 +536,7 @@ class Services:
             ticks += 1
             if ticks % 12 == 0:  # once a minute
                 try:
+                    expire_pending_mfa()
                     self._check_login()
                 except Exception as exc:  # noqa: BLE001
                     log.debug("Login check failed: %s", exc)
@@ -601,8 +645,7 @@ class RemoteAccess:
                 return
         except OSError:
             pass
-        WEBHOOK_CONFIG.write_text(content)
-        os.chmod(WEBHOOK_CONFIG, 0o600)
+        write_private(WEBHOOK_CONFIG, content)
         self._config_changed = True
 
     # HA config entry -----------------------------------------------------
@@ -869,6 +912,23 @@ class LoginError(Exception):
 
 
 PENDING_MFA: dict = {}
+LOGIN_ATTEMPTS: list[float] = []
+MAX_LOGINS = 5            # per LOGIN_WINDOW – protects your Garmin account from a lockout
+LOGIN_WINDOW = 15 * 60
+
+
+def _throttle_login() -> None:
+    now = time.time()
+    LOGIN_ATTEMPTS[:] = [t for t in LOGIN_ATTEMPTS if now - t < LOGIN_WINDOW]
+    if len(LOGIN_ATTEMPTS) >= MAX_LOGINS:
+        raise LoginError("err_too_many_attempts")
+    LOGIN_ATTEMPTS.append(now)
+
+
+def expire_pending_mfa() -> None:
+    """Drop a half-finished MFA login (it holds the password in memory)."""
+    if PENDING_MFA and time.time() - PENDING_MFA.get("started", 0) > MFA_TIMEOUT:
+        PENDING_MFA.clear()
 LOGIN_LOCK = threading.Lock()
 
 
@@ -897,8 +957,9 @@ def _finish_login(garmin: Garmin) -> str:
     shutil.rmtree(TOKEN_DIR, ignore_errors=True)
     tmp.rename(TOKEN_DIR)
     secure_dir(TOKEN_DIR)
-    ACCOUNT_FILE.write_text(json.dumps({"name": name, "since": int(time.time())}))
+    write_private(ACCOUNT_FILE, json.dumps({"name": name, "since": int(time.time())}))
     log.info("Logged in to Garmin Connect")
+    SERVICES.reset_login_state()
     SERVICES.restart_mcp()
     return name
 
@@ -911,6 +972,7 @@ def start_login(email: str, password: str) -> str:
             # log in again (Garmin rate-limits repeated logins).
             return "done"
         PENDING_MFA.clear()
+        _throttle_login()
         try:
             garmin = Garmin(email=email, password=password, return_on_mfa=True)
             result, _state = garmin.client.login(email, password, return_on_mfa=True)
@@ -1003,6 +1065,7 @@ TEXT = {
         "err_connection": "Garmin Connect could not be reached or rejected the login.",
         "err_unknown": "Login failed.",
         "err_csrf": "The page was outdated. Please try again.",
+        "err_too_many_attempts": "Too many login attempts. Please wait 15 minutes – this protects your Garmin account from being locked.",
         "ok_login": "Logged in successfully.",
         "ok_logout": "Logged out. Tokens deleted.",
         "ok_rotate": "New secret URL generated. Update your connectors.",
@@ -1118,6 +1181,7 @@ TEXT = {
         "err_connection": "Garmin Connect war nicht erreichbar oder hat die Anmeldung abgelehnt.",
         "err_unknown": "Anmeldung fehlgeschlagen.",
         "err_csrf": "Die Seite war veraltet. Bitte nochmal versuchen.",
+        "err_too_many_attempts": "Zu viele Anmeldeversuche. Bitte 15 Minuten warten – das schützt dein Garmin-Konto vor einer Sperre.",
         "ok_login": "Erfolgreich angemeldet.",
         "ok_logout": "Abgemeldet. Tokens gelöscht.",
         "ok_rotate": "Neue geheime URL erzeugt. Passe deine Connectors an.",
