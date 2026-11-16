@@ -895,8 +895,8 @@ class RemoteAccess:
             log.error("Remote access: %s", i18n.ui("en")["detail_no_config_access"])
             return
         try:
-            was_installed = (COMPONENT_DST / "manifest.json").exists()
-            if self._install_component() and not was_installed:
+            # New or updated files: Home Assistant needs a restart to load them.
+            if self._install_component():
                 self.first_install = True
             LEGACY_WEBHOOK_CONFIG.unlink(missing_ok=True)
         except OSError as exc:
@@ -1434,9 +1434,10 @@ async def index(request: Request) -> Response:
         f'<meta name="viewport" content="width=device-width,initial-scale=1">'
         f"<title>{t['title']}</title><style>{CSS}</style></head>"
         f"<body><main>{body}</main><script>{JS}</script>"
-        # While the server or remote access is still starting, reload the page
-        # every few seconds so the status updates without user action.
-        + ("<script>setTimeout(()=>location.reload(),5000)</script>"
+        # While the server or remote access is still starting, check the status
+        # every few seconds and reload only when it changed – and never while
+        # the user is typing into a form (login, 2FA code).
+        + (f"<script>{STATUS_POLL_JS}</script>"
            if (state == "pending" or REMOTE.state == "setting_up") and not PENDING_MFA else "")
         + "</body></html>"
     )
@@ -1499,6 +1500,29 @@ async def do_rotate(request: Request) -> Response:
         REMOTE.rotate()
         FLASH.update(kind="ok", key="ok_rotate")
     return _redirect(request)
+
+
+STATUS_POLL_JS = """
+(function(){
+  let first=null;
+  function busyTyping(){
+    const a=document.activeElement;
+    if(a&&(a.tagName==='INPUT'||a.tagName==='TEXTAREA'))return true;
+    return Array.from(document.querySelectorAll('input:not([type=hidden])')).some(i=>i.value);
+  }
+  async function poll(){
+    try{
+      const r=await fetch('status.json',{cache:'no-store'});
+      const s=await r.json();
+      const now=[s.server,s.remote,s.logged_in].join('|');
+      if(first===null){first=now}
+      else if(now!==first&&!busyTyping()&&!document.querySelector('form[data-busy]')){location.reload();return}
+    }catch(e){}
+    setTimeout(poll,5000);
+  }
+  setTimeout(poll,3000);
+})();
+"""
 
 
 def _page(request: Request, t: dict, body: str, extra_js: str = "") -> HTMLResponse:
@@ -1663,6 +1687,7 @@ async def status(request: Request) -> Response:
         {
             "logged_in": has_tokens(),
             "server": state,
+            "remote": REMOTE.state if globals().get("REMOTE") is not None else "",
             "active_tools": sorted(SERVICES.active_tools),
             "write_access": SERVICES.options.get("write_access"),
         }

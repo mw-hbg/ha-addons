@@ -1,5 +1,21 @@
 # Changelog
 
+## Unreleased
+
+- Fixed: the app page reloaded itself every few seconds while remote access was being set
+  up, so you could not log in. It now only reloads when the status actually changes and
+  never while you are typing.
+- Fixed: after the helper integration was updated, the app page now asks for the Home
+  Assistant restart right away.
+
+---
+
+- Behoben: Die App-Seite lud sich alle paar Sekunden neu, solange der Fernzugriff
+  eingerichtet wurde – dadurch konnte man sich nicht anmelden. Sie lädt jetzt nur neu, wenn
+  sich der Status wirklich ändert, und nie, während du etwas eintippst.
+- Behoben: Nach einem Update der Hilfs-Integration fordert die App-Seite den Neustart von
+  Home Assistant jetzt sofort an.
+
 ## 0.4.0
 
 **After updating:** restart Home Assistant once (the app page and a repair notice ask for it)
