@@ -3,7 +3,8 @@
 ## Unreleased
 
 **After updating:** restart Home Assistant once (the app page and a repair notice ask for it)
-and generate a new secret URL on the app page (**New URL**), then replace it in your AI app.
+and generate a new secret URL on the app page (**Generate new secret URL**), then replace it
+in your AI app.
 
 Security
 - The app no longer has any access to the Home Assistant API. The helper integration is
@@ -33,7 +34,7 @@ Security
 
 Stability
 - If the Garmin login fails temporarily (e.g. no internet after a power cut, Garmin down),
-  the app retries by itself with growing pauses; the notification only appears if it keeps failing.
+  the app retries by itself with growing pauses; the repair notice only appears if it keeps failing.
 - All Python dependencies are pinned, so every build produces the same app.
 
 Configuration
@@ -41,7 +42,7 @@ Configuration
   tools each area contains.
 - New option `keep_downloads_days` (default 7): downloaded FIT/GPX files are deleted after that
   many days. Downloads are no longer part of Home Assistant backups.
-- New option `login_notification` (default on) to switch off the notification about login problems.
+- New option `login_notification` (default on) to switch off the repair notice about login problems.
 - `public_url` accepts a copied browser address (only scheme and host are used); the app page
   warns if it is invalid or uses `http://`.
 - Typos in `enable_tools` / `disable_tools` are shown as a warning on the app page.
@@ -49,23 +50,24 @@ Configuration
   to `write_access`) – before, workouts could not be sent to the watch without `enable_tools`.
 
 Uninstalling
-- Uninstalling the app now also removes its helper integration: the integration checks
-  every 10 minutes whether the app is still installed and, once it is gone, removes its
-  entry and files and shows a notification (no restart needed). Nothing is removed while
-  the app is only stopped.
+- Uninstalling the app now also removes its helper integration: Home Assistant removes the
+  entry by itself, the integration then deletes its files and shows a notification (no
+  restart needed). If Home Assistant was off during the uninstall, the integration notices
+  it within 10–20 minutes after the next start. Nothing is removed while the app is only
+  stopped.
 
 Languages
-- Everything is available in English and German: app page, configuration, notifications,
-  repair notice and documentation (`DOCS.de.md`). The page follows the browser language
-  (otherwise the Home Assistant language) and can be switched at the bottom of the page.
-  Notifications use the Home Assistant language instead of showing both languages.
+- Everything is available in English and German: app page, configuration, repair notices
+  and documentation (`DOCS.de.md`). The page follows the browser language (otherwise the
+  Home Assistant language) and can be switched at the bottom of the page. Notices use the
+  Home Assistant language instead of showing both languages.
 - New languages can be added without code changes – see `TRANSLATING.md`.
 
 Other
 - Called "app" everywhere, like Home Assistant since 2026.2 – including
   the repository (now `https://github.com/mw-hbg/ha-apps`; the old address forwards) and
-  the image names. The helper integration was updated for this (version 0.2.2), hence the
-  one-time restart.
+  the image names. The helper integration was updated (version 0.3.0), hence the one-time
+  restart.
 - Automated tests for every change and a test run of the built app; new release process that
   publishes the app before Home Assistant offers the update; weekly check for new versions of
   the Garmin server; SECURITY.md and issue templates.
