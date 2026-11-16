@@ -852,7 +852,7 @@ class RemoteAccess:
             return
         if not HA_CONFIG.is_dir():
             self.state, self.detail = "error", "@no_config_access"
-            log.error("Remote access: %s", self.detail)
+            log.error("Remote access: %s", i18n.ui("en")["detail_no_config_access"])
             return
         try:
             was_installed = (COMPONENT_DST / "manifest.json").exists()
@@ -998,6 +998,13 @@ def run_connection_test() -> dict:
                 add("test_garmin", False, "@relogin")
             else:
                 add("test_garmin", False, text[:160])
+        finally:
+            # login() may have refreshed the token files as root – hand them
+            # back to the MCP server's user, or it could not update them.
+            try:
+                prepare_mcp_dirs(mcp_identity())
+            except OSError as exc:
+                log.warning("Could not fix token permissions: %s", exc)
 
     # 3. The connector URL works from the internet (round trip via your
     #    public address, exactly like the AI app reaches it)
