@@ -29,7 +29,7 @@ def test_forwards_requests_and_streams_answers(tmp_path, monkeypatch):
 async def _forward_round_trip(tmp_path, monkeypatch):
     seen = {}
 
-    async def fake_addon(request):
+    async def fake_app(request):
         seen["headers"] = dict(request.headers)
         seen["body"] = await request.json()
         resp = web.StreamResponse(headers={"Content-Type": "text/event-stream"})
@@ -38,11 +38,11 @@ async def _forward_round_trip(tmp_path, monkeypatch):
         await resp.write_eof()
         return resp
 
-    addon = web.Application()
-    addon.router.add_post("/secret/mcp", fake_addon)
-    addon_runner = web.AppRunner(addon)
-    await addon_runner.setup()
-    await web.TCPSite(addon_runner, "127.0.0.1", 18100).start()
+    app_server = web.Application()
+    app_server.router.add_post("/secret/mcp", fake_app)
+    app_runner = web.AppRunner(app_server)
+    await app_runner.setup()
+    await web.TCPSite(app_runner, "127.0.0.1", 18100).start()
 
     config = tmp_path / "webhook.json"
     config.write_text(json.dumps({"webhook_id": "wh123", "target_url": "http://127.0.0.1:18100/secret/mcp"}))
@@ -86,10 +86,10 @@ async def _forward_round_trip(tmp_path, monkeypatch):
         assert await integration.async_unload_entry(hass, entry)
         assert "wh123" not in REGISTERED
         await ha_runner.cleanup()
-        await addon_runner.cleanup()
+        await app_runner.cleanup()
 
 
-def test_addon_down_gives_502(tmp_path, monkeypatch):
+def test_app_down_gives_502(tmp_path, monkeypatch):
     async def run():
         config = tmp_path / "webhook.json"
         config.write_text(json.dumps({"webhook_id": "wh502", "target_url": "http://127.0.0.1:1/x"}))

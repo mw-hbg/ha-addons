@@ -29,15 +29,15 @@ without any third-party service in between.
 * **Notifications** when a restart is needed or the Garmin login expired.
 * **Protected endpoint:** only reachable via a long random secret URL, which you
   can rotate with one click.
+* **English and German** – app page, configuration, notifications and documentation;
+  more languages can be added without code ([TRANSLATING.md](TRANSLATING.md)).
 * Works with any AI app that supports remote MCP servers (Streamable HTTP).
 * Pre-built images for `amd64` and `aarch64` (Raspberry Pi 4/5).
 
 ## Installation
 
-[![Add repository to Home Assistant](https://my.home-assistant.io/badges/supervisor_add_addon_repository.svg)](https://my.home-assistant.io/redirect/supervisor_add_addon_repository/?repository_url=https%3A%2F%2Fgithub.com%2Fmw-hbg%2Fha-addons)
-
-1. *Settings → Apps → Store → ⋮ → Repositories*, add
-   `https://github.com/mw-hbg/ha-addons`.
+1. *Settings → Apps → Install app → ⋮ → Repositories*, add
+   `https://github.com/mw-hbg/ha-apps`.
 2. Install **Garmin Connect MCP** and start it.
 3. Open **Garmin MCP** in the sidebar, log in to Garmin Connect.
 4. Restart Home Assistant once when the app page asks for it.
@@ -89,7 +89,7 @@ or you want to secure Garmin access separately from Home Assistant.
 **Setting up `direct`** – best before the first start:
 
 1. Install the app, but don't start it yet.
-2. *Configuration* tab: **Remote access** = `direct`, **Public base URL** =
+2. *Configuration* tab: **Remote access** = `direct`, **Public address** =
    your hostname (e.g. `https://garmin.example.com`). Save.
 3. Start the app. It installs nothing in Home Assistant.
 4. The app page shows a *target for your tunnel / reverse proxy*
@@ -116,8 +116,8 @@ The connector URL changes when you switch – update it in your AI app.
 
 ## Development
 
-* **Local testing:** copy the `garmin_mcp` folder to `/addons/` on your Home
-  Assistant host, remove the `image:` line from `config.yaml` and install it
+* **Local testing:** copy the `garmin_mcp` folder into the local apps folder of your
+  Home Assistant host (Samba or SSH), remove the `image:` line from `config.yaml` and install it
   from *Local apps* – Home Assistant then builds the image itself.
 * **Tests:** `pytest tests` (unit tests for the launcher and the helper
   integration); every push also builds both images and runs a smoke test of

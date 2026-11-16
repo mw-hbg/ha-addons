@@ -4,7 +4,7 @@
   "codeowners": [],
   "config_flow": true,
   "dependencies": ["webhook", "repairs"],
-  "documentation": "https://github.com/mw-hbg/ha-addons",
+  "documentation": "https://github.com/mw-hbg/ha-apps",
   "integration_type": "service",
   "iot_class": "local_push",
   "single_config_entry": true,

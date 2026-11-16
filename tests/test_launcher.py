@@ -5,7 +5,6 @@ import json
 import pytest
 
 import launcher as L
-import tool_texts
 
 
 @pytest.fixture(autouse=True)
@@ -98,18 +97,6 @@ def test_new_tools_after_update_are_off_and_reported():
     assert L.new_tools() == ["get_hill_score"]
     _, active = L.tool_selection(opts())
     assert "get_hill_score" not in active
-
-
-# --- texts --------------------------------------------------------------------
-
-def test_both_languages_have_the_same_texts():
-    assert set(L.TEXT["de"]) == set(L.TEXT["en"])
-
-
-def test_every_tool_has_a_german_description_and_category():
-    missing = [e["name"] for e in L.CATALOG if e["name"] not in tool_texts.DE]
-    assert not missing, f"German description missing for: {missing}"
-    assert all(e["module"] in tool_texts.CATEGORIES for e in L.CATALOG)
 
 
 # --- secrets and nginx --------------------------------------------------------

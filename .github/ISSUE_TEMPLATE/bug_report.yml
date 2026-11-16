@@ -8,7 +8,7 @@ body:
         Thanks for reporting! **Never post your connector URL, the secret path or Garmin login data.**
         Danke für die Meldung! **Niemals die Connector-URL, den geheimen Pfad oder Garmin-Zugangsdaten posten.**
   - type: input
-    id: addon_version
+    id: app_version
     attributes:
       label: App version
       placeholder: "0.3.0"

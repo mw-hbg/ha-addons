@@ -2,8 +2,6 @@
 
 [🇩🇪 Deutsch](#deutsch)
 
-[![Add repository to Home Assistant](https://my.home-assistant.io/badges/supervisor_add_addon_repository.svg)](https://my.home-assistant.io/redirect/supervisor_add_addon_repository/?repository_url=https%3A%2F%2Fgithub.com%2Fmw-hbg%2Fha-addons)
-
 ## Apps
 
 | App | Description |
@@ -12,9 +10,9 @@
 
 ## Installation
 
-1. *Settings → Apps → Store → ⋮ → Repositories*, add
-   `https://github.com/mw-hbg/ha-addons` – or click the button above.
-2. The apps appear in the store. New apps in this repository show up
+1. *Settings → Apps → Install app → ⋮ → Repositories*, add
+   `https://github.com/mw-hbg/ha-apps`
+2. The apps appear under *Install app*. New apps in this repository show up
    automatically.
 
 Requires Home Assistant OS or Supervised. Each app has its own
@@ -31,9 +29,9 @@ See [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md) for bundled software.
 
 Sammlung von Home-Assistant-Apps.
 
-**Installation:** *Einstellungen → Apps → Store → ⋮ → Repositories*,
-dort `https://github.com/mw-hbg/ha-addons` eintragen. Neue Apps in diesem
-Repository erscheinen danach automatisch im Store.
+**Installation:** *Einstellungen → Apps → App installieren → ⋮ → Repositories*,
+dort `https://github.com/mw-hbg/ha-apps` eintragen. Neue Apps in diesem
+Repository erscheinen danach automatisch unter *App installieren*.
 
 | App | Beschreibung |
 |---|---|

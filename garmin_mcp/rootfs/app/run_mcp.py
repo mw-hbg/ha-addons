@@ -3,7 +3,7 @@
 * Error hints refer to the app page instead of the `garmin-mcp-auth`
   command line tool, which does not exist for app users. These texts reach
   the AI assistant, which passes them on to the user.
-* The server's own log level follows the app option (GARMIN_ADDON_LOG_LEVEL),
+* The server's own log level follows the app option (GARMIN_APP_LOG_LEVEL),
   so per-request lines like "POST /mcp 200" only appear with log_level: debug.
 * File paths given to tools are confined to the app's download folder.
   Without this, a tool call could read any file in the container (e.g.
@@ -48,7 +48,7 @@ def _init_api(*args, **kwargs):
 garmin_mcp.init_api = _init_api
 
 # 3. Log level of the MCP server (uvicorn access log, request logging)
-_level = os.environ.get("GARMIN_ADDON_LOG_LEVEL", "WARNING").upper()
+_level = os.environ.get("GARMIN_APP_LOG_LEVEL", "WARNING").upper()
 _original_fastmcp_init = fastmcp_module.FastMCP.__init__
 
 

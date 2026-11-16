@@ -31,13 +31,15 @@ von Garmin zu deinem KI-Assistenten.
   abgelaufen ist.
 * **Geschützter Endpunkt:** nur über eine lange, zufällige geheime URL
   erreichbar, die du per Klick neu erzeugen kannst.
+* **Deutsch und Englisch** – App-Seite, Konfiguration, Benachrichtigungen und Anleitung;
+  weitere Sprachen lassen sich ohne Code ergänzen ([TRANSLATING.md](TRANSLATING.md)).
 * Funktioniert mit jeder KI-App, die Remote-MCP-Server (Streamable HTTP) unterstützt.
 * Fertige Images für `amd64` und `aarch64` (Raspberry Pi 4/5).
 
 ## Installation
 
-1. *Einstellungen → Apps → Store → ⋮ → Repositories*, dort
-   `https://github.com/mw-hbg/ha-addons` eintragen.
+1. *Einstellungen → Apps → App installieren → ⋮ → Repositories*, dort
+   `https://github.com/mw-hbg/ha-apps` eintragen.
 2. **Garmin Connect MCP** installieren und starten.
 3. In der Seitenleiste **Garmin MCP** öffnen und bei Garmin Connect anmelden.
 4. Home Assistant einmal neu starten, wenn die App-Seite darum bittet.
@@ -58,8 +60,9 @@ Gut zu wissen:
   Connectors eventuell nach einer Anmeldung bei Home Assistant. Das kommt von
   ha-mcp und ist unbedenklich.
 
-Ausführliche Anleitung (Englisch): [DOCS.md](DOCS.md),
-auch im Tab *Dokumentation* der App.
+Ausführliche Anleitung: [DOCS.de.md](DOCS.de.md). Der Tab *Dokumentation* der App zeigt
+sie auf Englisch (Home Assistant kann dort nur eine Sprache anzeigen); ganz oben steht
+der Link zur deutschen Fassung.
 
 ## Warum installiert die App eine Integration?
 

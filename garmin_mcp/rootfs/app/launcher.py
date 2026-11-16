@@ -52,12 +52,12 @@ from garmin_mcp.tool_annotations import (
 )
 from garmin_mcp.tool_profiles import resolve_tool_profile
 
-import tool_texts
+import i18n
 
 # --------------------------------------------------------------------------
 # Paths and constants
 # --------------------------------------------------------------------------
-DATA = Path(os.environ.get("ADDON_DATA_DIR", "/data"))
+DATA = Path(os.environ.get("APP_DATA_DIR", "/data"))
 OPTIONS_FILE = DATA / "options.json"
 TOKEN_DIR = DATA / "garmin_tokens"
 SECRET_FILE = DATA / "secret_path"
@@ -80,7 +80,7 @@ WEBHOOK_CONFIG = HA_CONFIG / ".garmin_mcp_webhook.json"
 WEBHOOK_ID_FILE = DATA / "webhook_id"
 WEBHOOK_DOMAIN = "garmin_mcp_webhook"
 
-log = logging.getLogger("garmin_mcp_addon")
+log = logging.getLogger("garmin_mcp_app")
 SELECTION_FILE = DATA / "tool_selection.json"
 
 
@@ -126,7 +126,7 @@ def _build_catalog() -> list[dict]:
         if not callable(getattr(mod, "register_tools", None)):
             continue
         try:
-            mod.register_tools(_Collector(module if module in tool_texts.CATEGORIES else "other"))
+            mod.register_tools(_Collector(module if module in i18n.CATEGORY_ORDER else "other"))
         except Exception as exc:  # noqa: BLE001
             log.warning("Could not read tool list of %s: %s", module, exc)
     for entry in entries:
@@ -517,7 +517,7 @@ class Services:
                 if sensitive:
                     env.pop(key, None)
             level = str(self.options.get("log_level", "info")).lower()
-            env["GARMIN_ADDON_LOG_LEVEL"] = "DEBUG" if level == "debug" else "WARNING"
+            env["GARMIN_APP_LOG_LEVEL"] = "DEBUG" if level == "debug" else "WARNING"
             run_mcp = Path(__file__).resolve().parent / "run_mcp.py"
             self.mcp = subprocess.Popen([sys.executable, str(run_mcp)], env=env, cwd=str(DOWNLOAD_DIR))
             log.info(
@@ -594,14 +594,8 @@ class Services:
                 "/services/persistent_notification/create",
                 {
                     "notification_id": "garmin_mcp_login",
-                    "title": "Garmin Connect MCP",
-                    "message": (
-                        "The Garmin Connect login is no longer valid – the AI cannot read your "
-                        "Garmin data. Open **Garmin MCP** in the sidebar and log in again. / "
-                        "Die Anmeldung bei Garmin Connect ist nicht mehr gültig – die KI kann "
-                        "nicht auf deine Garmin-Daten zugreifen. Öffne **Garmin MCP** in der "
-                        "Seitenleiste und melde dich neu an."
-                    ),
+                    "title": notification_text("notify_login_title"),
+                    "message": notification_text("notify_login"),
                 },
                 quiet=True,
             )
@@ -662,6 +656,11 @@ class Services:
 # --------------------------------------------------------------------------
 # Home Assistant Core API (via Supervisor) and webhook remote access
 # --------------------------------------------------------------------------
+def notification_text(key: str) -> str:
+    """Notifications are shown to everyone, so they use the Home Assistant language."""
+    return i18n.ui(i18n.pick(ha_language()))[key]
+
+
 def core_api(method: str, path: str, data: dict | None = None, quiet: bool = False):
     """Call the Home Assistant REST API through the Supervisor proxy."""
     token = os.environ.get("SUPERVISOR_TOKEN")
@@ -759,13 +758,8 @@ class RemoteAccess:
             "/services/persistent_notification/create",
             {
                 "notification_id": "garmin_mcp_restart",
-                "title": "Garmin Connect MCP",
-                "message": (
-                    "Please restart Home Assistant once to activate remote access "
-                    "for the Garmin Connect MCP app. / Bitte Home Assistant einmal "
-                    "neu starten, um den Fernzugriff für die App Garmin Connect MCP "
-                    "zu aktivieren."
-                ),
+                "title": notification_text("notify_restart_title"),
+                "message": notification_text("notify_restart"),
             },
         )
 
@@ -804,7 +798,7 @@ class RemoteAccess:
                 log.warning("Could not remove the helper integration: %s", exc)
             return
         if not HA_CONFIG.is_dir():
-            self.state, self.detail = "error", "no access to the Home Assistant config folder"
+            self.state, self.detail = "error", "@no_config_access"
             log.error("Remote access: %s", self.detail)
             return
         try:
@@ -828,7 +822,7 @@ class RemoteAccess:
         entry, api_ok = self._entry()
         if not api_ok:
             self._saw_ha_down = True
-            self.state, self.detail = "setting_up", "Home Assistant API not reachable"
+            self.state, self.detail = "setting_up", "@api_unreachable"
             return
         if self.pending_restart:
             if self._saw_ha_down:
@@ -865,7 +859,7 @@ class RemoteAccess:
             self.state = "setting_up"
         else:
             self.state = "error"
-            self.detail = f"integration state: {entry.get('state') if entry else 'missing'}"
+            self.detail = f"@integration_state|{entry.get('state') if entry else 'missing'}"
 
     def rotate(self) -> None:
         self.webhook_id = get_webhook_id(rotate=True)
@@ -973,7 +967,7 @@ def run_connection_test() -> dict:
                     "params": {
                         "protocolVersion": "2025-06-18",
                         "capabilities": {},
-                        "clientInfo": {"name": "garmin-mcp-addon-selftest", "version": "1"},
+                        "clientInfo": {"name": "garmin-mcp-app-selftest", "version": "1"},
                     },
                 },
             )
@@ -1106,246 +1100,6 @@ def logout() -> None:
 # --------------------------------------------------------------------------
 # Web UI (Home Assistant ingress)
 # --------------------------------------------------------------------------
-TEXT = {
-    "en": {
-        "title": "Garmin Connect MCP",
-        "account": "Garmin account",
-        "connected_as": "Connected as",
-        "not_connected": "Not connected yet. Log in once – your password is not stored, only the access tokens Garmin issues (valid for about six months). Two-factor authentication is supported: if it is enabled, you will be asked for the code.",
-        "email": "E-mail",
-        "password": "Password",
-        "login": "Log in",
-        "logout": "Log out and delete tokens",
-        "logout_confirm": "Log out and delete the stored Garmin tokens?",
-        "mfa_title": "Two-factor authentication",
-        "mfa_hint": "Garmin has sent you a security code. Enter it here.",
-        "mfa_code": "Code",
-        "confirm": "Confirm",
-        "cancel": "Cancel",
-        "server": "Server",
-        "state": "Status",
-        "state_ready": "Ready",
-        "state_pending": "Starting …",
-        "state_failed": "Garmin login failed – please log in again",
-        "state_stopped": "Stopped (not logged in)",
-        "tools": "Active tools",
-        "write_access": "Write access",
-        "wa_read_only": "read only",
-        "wa_create_only": "create, but never delete or overwrite",
-        "wa_full": "full (incl. delete and edit)",
-        "options_hint": "",
-        "connection": "Connect your AI assistant",
-        "connector_url": "Connector URL",
-        "show": "Show",
-        "hide": "Hide",
-        "copy": "Copy",
-        "copied": "Copied",
-        "no_public_url": "Set “Public address” in the configuration to see the full address. Until then, replace the domain placeholder.",
-        "internal_url": "Target for your tunnel / reverse proxy",
-        "internal_hint": "Point a public HTTPS hostname (e.g. in the Cloudflared app) at this address. Never publish port 8100 without HTTPS.",
-        "secret_warning": "Anyone who knows this URL can use your Garmin account through the AI tools. Treat it like a password.",
-        "rotate": "Generate new secret URL",
-        "rotate_confirm": "Generate a new secret URL? The old one stops working immediately and you must update your connectors.",
-        "steps": "Add it in your AI app as a custom connector / remote MCP server (no authentication). Details: see the Documentation tab.",
-        "err_credentials": "Wrong e-mail or password.",
-        "err_mfa": "The security code was wrong or has expired.",
-        "err_mfa_expired": "The login took too long. Please start again.",
-        "err_rate_limit": "Garmin is rate-limiting logins. Please wait a few minutes and try again.",
-        "err_connection": "Garmin Connect could not be reached or rejected the login.",
-        "err_unknown": "Login failed.",
-        "err_csrf": "The page was outdated. Please try again.",
-        "err_too_many_attempts": "Too many login attempts. Please wait 15 minutes – this protects your Garmin account from being locked.",
-        "ok_login": "Logged in successfully.",
-        "ok_logout": "Logged out. Tokens deleted.",
-        "ok_rotate": "New secret URL generated. Update your connectors.",
-        "ok_restart": "Home Assistant is restarting. Reload this page in a minute.",
-        "upload_hint": "To let the AI create workouts on your watch, Garmin needs your consent to data uploads (required for EU accounts): Garmin Connect → Settings → Privacy settings → Data → “Upload device data” must be on. If your watch already syncs to Garmin Connect, this is usually already the case.",
-        "oauth_hint": "If you also use the ha-mcp app with its webhook proxy, your AI app may ask you to log in to your Home Assistant and grant access when adding the connector. That comes from ha-mcp and is harmless – just confirm it.",
-        "login_busy": "Please wait …",
-        "login_wait": "Logging in to Garmin – this can take up to 30 seconds. Please don't click again.",
-        "restart_banner_title": "Restart of Home Assistant required",
-        "restart_busy": "Restarting …",
-        "custom_selection": "custom selection (app page)",
-        "what_ai_may": "What the AI may do",
-        "nothing": "nothing",
-        "kind_read": "read",
-        "kind_create": "create",
-        "kind_change": "change/delete",
-        "choose_tools": "Choose tools",
-        "open_config": "Open configuration",
-        "tools_title": "Choose tools",
-        "back": "← Back",
-        "search": "Search tools …",
-        "selected": "selected",
-        "preset": "Presets:",
-        "preset_read": "Read only",
-        "preset_create": "Create, never delete (recommended)",
-        "preset_all": "Everything",
-        "preset_none": "Nothing",
-        "save": "Save and restart server",
-        "reset": "Reset to configuration",
-        "reset_confirm": "Discard your selection and use the areas and write access from the configuration again?",
-        "tools_intro": "Tick what the AI may use. ⓘ explains each tool. Saving restarts the server; afterwards your AI app may need a moment to see the new tool list.",
-        "info_name": "Technical name",
-        "info_kind": "Access",
-        "info_kind_read": "Only reads data from Garmin Connect.",
-        "info_kind_create": "Adds something new to Garmin Connect (e.g. a workout or an entry), never deletes or overwrites.",
-        "info_kind_change": "Changes, overwrites or deletes existing data – or saves files. Allow deliberately.",
-        "info_original": "Original description",
-        "ok_tools": "Selection saved. The server is restarting.",
-        "ok_tools_reset": "Selection reset – the configuration applies again.",
-        "cleaned_up": "Remote access is set to “direct”: the helper integration for the webhook was removed from Home Assistant. No restart needed.",
-        "new_tools_hint": "{n} new tools since you saved your selection – they are switched off.",
-        "unknown_tools": "These tool names in the configuration do not exist and are ignored (typo?):",
-        "public_url_http": "The public address uses http://. Most AI apps only accept https:// connectors.",
-        "public_url_invalid": "The “Public address” in the configuration is not a valid web address and is ignored. Example: https://home.example.com",
-        "new_tools_banner": "An update added {n} new tools (marked “new”). They stay switched off until you tick them and save.",
-        "new": "new",
-        "review": "Review",
-        "docs": "Documentation",
-        "test_title": "Connection test",
-        "test_intro": "Checks the server, your Garmin login and the connector URL from the internet – exactly the way your AI app reaches it.",
-        "test_run": "Test connection",
-        "test_busy": "Testing … (up to 30 s)",
-        "test_ok": "Everything works.",
-        "test_failed": "Something is not working:",
-        "test_server": "MCP server answers (tools)",
-        "test_garmin": "Garmin account reachable",
-        "test_public": "Connector URL reachable from the internet",
-        "detail_not_logged_in": "not logged in – log in above",
-        "detail_relogin": "login no longer valid – log out and log in again",
-        "detail_no_public": "public address unknown – set “Public base URL” in the configuration",
-        "remote": "Remote access",
-        "remote_active": "Active – via your Home Assistant address",
-        "remote_setting_up": "Setting up …",
-        "remote_restart_needed": "Home Assistant must be restarted once",
-        "remote_error": "Error",
-        "remote_disabled": "Off",
-        "restart_hint": "The app has installed or updated its small helper integration for remote access. Home Assistant loads it only after a restart – until then the connector cannot work. Logging in to Garmin already works.",
-        "restart_ha": "Restart Home Assistant now",
-        "restart_confirm": "Restart Home Assistant now? It will be unavailable for about a minute.",
-        "no_base_url": "Home Assistant has no external URL configured. Set it under Settings → System → Network, or enter it as “Public address” in the app configuration – until then, replace the placeholder.",
-    },
-    "de": {
-        "title": "Garmin Connect MCP",
-        "account": "Garmin-Konto",
-        "connected_as": "Verbunden als",
-        "not_connected": "Noch nicht verbunden. Melde dich einmal an – dein Passwort wird nicht gespeichert, nur die Zugangstokens von Garmin (gültig ca. sechs Monate). Zwei-Faktor-Anmeldung wird unterstützt: Ist sie aktiv, wirst du nach dem Code gefragt.",
-        "email": "E-Mail",
-        "password": "Passwort",
-        "login": "Anmelden",
-        "logout": "Abmelden und Tokens löschen",
-        "logout_confirm": "Abmelden und die gespeicherten Garmin-Tokens löschen?",
-        "mfa_title": "Zwei-Faktor-Anmeldung",
-        "mfa_hint": "Garmin hat dir einen Sicherheitscode geschickt. Gib ihn hier ein.",
-        "mfa_code": "Code",
-        "confirm": "Bestätigen",
-        "cancel": "Abbrechen",
-        "server": "Server",
-        "state": "Status",
-        "state_ready": "Bereit",
-        "state_pending": "Startet …",
-        "state_failed": "Garmin-Anmeldung fehlgeschlagen – bitte neu anmelden",
-        "state_stopped": "Gestoppt (nicht angemeldet)",
-        "tools": "Aktive Tools",
-        "write_access": "Schreibrechte",
-        "wa_read_only": "nur lesen",
-        "wa_create_only": "anlegen, aber nie löschen oder überschreiben",
-        "wa_full": "voll (inkl. Löschen und Bearbeiten)",
-        "options_hint": "",
-        "connection": "KI-Assistent verbinden",
-        "connector_url": "Connector-URL",
-        "show": "Anzeigen",
-        "hide": "Verbergen",
-        "copy": "Kopieren",
-        "copied": "Kopiert",
-        "no_public_url": "Trage in der Konfiguration die „Öffentliche Adresse“ ein, dann siehst du hier die vollständige URL. Bis dahin den Domain-Platzhalter ersetzen.",
-        "internal_url": "Ziel für deinen Tunnel / Reverse Proxy",
-        "internal_hint": "Leite einen öffentlichen HTTPS-Hostnamen (z. B. in der Cloudflared-App) auf diese Adresse. Port 8100 nie ohne HTTPS freigeben.",
-        "secret_warning": "Wer diese URL kennt, kann über die KI-Tools auf dein Garmin-Konto zugreifen. Behandle sie wie ein Passwort.",
-        "rotate": "Neue geheime URL erzeugen",
-        "rotate_confirm": "Neue geheime URL erzeugen? Die alte funktioniert sofort nicht mehr und du musst deine Connectors anpassen.",
-        "steps": "Trage sie in deiner KI-App als benutzerdefinierten Connector bzw. Remote-MCP-Server ein (ohne Authentifizierung). Details im Tab „Dokumentation“.",
-        "err_credentials": "E-Mail oder Passwort falsch.",
-        "err_mfa": "Der Sicherheitscode war falsch oder ist abgelaufen.",
-        "err_mfa_expired": "Die Anmeldung hat zu lange gedauert. Bitte neu starten.",
-        "err_rate_limit": "Garmin blockiert gerade zu viele Anmeldeversuche. Bitte ein paar Minuten warten.",
-        "err_connection": "Garmin Connect war nicht erreichbar oder hat die Anmeldung abgelehnt.",
-        "err_unknown": "Anmeldung fehlgeschlagen.",
-        "err_csrf": "Die Seite war veraltet. Bitte nochmal versuchen.",
-        "err_too_many_attempts": "Zu viele Anmeldeversuche. Bitte 15 Minuten warten – das schützt dein Garmin-Konto vor einer Sperre.",
-        "ok_login": "Erfolgreich angemeldet.",
-        "ok_logout": "Abgemeldet. Tokens gelöscht.",
-        "ok_rotate": "Neue geheime URL erzeugt. Passe deine Connectors an.",
-        "ok_restart": "Home Assistant startet neu. Lade diese Seite in einer Minute neu.",
-        "upload_hint": "Damit die KI Workouts auf deine Uhr bringen kann, braucht Garmin deine Zustimmung zum Hochladen (Pflicht bei EU-Konten): Garmin Connect → Einstellungen → Datenschutzeinstellungen → Daten → „Gerätedaten hochladen“ muss aktiv sein. Synchronisiert deine Uhr schon mit Garmin Connect, ist das meist bereits der Fall.",
-        "oauth_hint": "Nutzt du zusätzlich die App ha-mcp mit seinem Webhook-Proxy, fragt deine KI-App beim Hinzufügen des Connectors eventuell nach einer Anmeldung bei deinem Home Assistant und einer Zugriffsfreigabe. Das kommt von ha-mcp und ist unbedenklich – einfach bestätigen.",
-        "login_busy": "Bitte warten …",
-        "login_wait": "Anmeldung bei Garmin läuft – das kann bis zu 30 Sekunden dauern. Bitte nicht erneut klicken.",
-        "restart_banner_title": "Neustart von Home Assistant erforderlich",
-        "restart_busy": "Startet neu …",
-        "custom_selection": "eigene Auswahl (App-Seite)",
-        "what_ai_may": "Was die KI darf",
-        "nothing": "nichts",
-        "kind_read": "lesen",
-        "kind_create": "anlegen",
-        "kind_change": "ändern/löschen",
-        "choose_tools": "Tools auswählen",
-        "open_config": "Konfiguration öffnen",
-        "tools_title": "Tools auswählen",
-        "back": "← Zurück",
-        "search": "Tools durchsuchen …",
-        "selected": "ausgewählt",
-        "preset": "Vorlagen:",
-        "preset_read": "Nur lesen",
-        "preset_create": "Anlegen, nie löschen (empfohlen)",
-        "preset_all": "Alles",
-        "preset_none": "Nichts",
-        "save": "Speichern und Server neu starten",
-        "reset": "Auf Konfiguration zurücksetzen",
-        "reset_confirm": "Deine Auswahl verwerfen und wieder Bereiche und Schreibrechte aus der Konfiguration verwenden?",
-        "tools_intro": "Hake an, was die KI nutzen darf. ⓘ erklärt jedes Tool. Beim Speichern startet der Server neu; deine KI-App braucht danach eventuell einen Moment, bis sie die neue Liste kennt.",
-        "info_name": "Technischer Name",
-        "info_kind": "Zugriff",
-        "info_kind_read": "Liest nur Daten aus Garmin Connect.",
-        "info_kind_create": "Legt etwas Neues in Garmin Connect an (z. B. ein Workout oder einen Eintrag), löscht oder überschreibt nie etwas.",
-        "info_kind_change": "Ändert, überschreibt oder löscht vorhandene Daten – oder speichert Dateien. Bewusst freigeben.",
-        "info_original": "Originalbeschreibung",
-        "ok_tools": "Auswahl gespeichert. Der Server startet neu.",
-        "ok_tools_reset": "Auswahl zurückgesetzt – es gilt wieder die Konfiguration.",
-        "cleaned_up": "Fernzugriff steht auf „direct“: Die Hilfs-Integration für den Webhook wurde aus Home Assistant entfernt. Ein Neustart ist nicht nötig.",
-        "new_tools_hint": "{n} neue Tools seit deiner gespeicherten Auswahl – sie sind ausgeschaltet.",
-        "unknown_tools": "Diese Tool-Namen aus der Konfiguration gibt es nicht, sie werden ignoriert (Tippfehler?):",
-        "public_url_http": "Die öffentliche Adresse beginnt mit http://. Die meisten KI-Apps akzeptieren nur https://-Connectoren.",
-        "public_url_invalid": "Die „Öffentliche Adresse“ in der Konfiguration ist keine gültige Webadresse und wird ignoriert. Beispiel: https://home.example.com",
-        "new_tools_banner": "Ein Update hat {n} neue Tools gebracht (markiert mit „neu“). Sie bleiben aus, bis du sie anhakst und speicherst.",
-        "new": "neu",
-        "review": "Ansehen",
-        "docs": "Dokumentation",
-        "test_title": "Verbindungstest",
-        "test_intro": "Prüft den Server, deine Garmin-Anmeldung und die Connector-URL aus dem Internet – genau so, wie deine KI-App sie erreicht.",
-        "test_run": "Verbindung testen",
-        "test_busy": "Teste … (bis zu 30 s)",
-        "test_ok": "Alles funktioniert.",
-        "test_failed": "Etwas funktioniert nicht:",
-        "test_server": "MCP-Server antwortet (Tools)",
-        "test_garmin": "Garmin-Konto erreichbar",
-        "test_public": "Connector-URL aus dem Internet erreichbar",
-        "detail_not_logged_in": "nicht angemeldet – oben anmelden",
-        "detail_relogin": "Anmeldung nicht mehr gültig – abmelden und neu anmelden",
-        "detail_no_public": "öffentliche Adresse unbekannt – „Öffentliche Adresse“ in der Konfiguration eintragen",
-        "remote": "Fernzugriff",
-        "remote_active": "Aktiv – über deine Home-Assistant-Adresse",
-        "remote_setting_up": "Wird eingerichtet …",
-        "remote_restart_needed": "Home Assistant muss einmal neu gestartet werden",
-        "remote_error": "Fehler",
-        "remote_disabled": "Aus",
-        "restart_hint": "Die App hat ihre kleine Hilfs-Integration für den Fernzugriff installiert bzw. aktualisiert. Home Assistant lädt sie erst nach einem Neustart – bis dahin kann der Connector nicht funktionieren. Die Anmeldung bei Garmin geht schon.",
-        "restart_ha": "Home Assistant jetzt neu starten",
-        "restart_confirm": "Home Assistant jetzt neu starten? Es ist dann etwa eine Minute nicht erreichbar.",
-        "no_base_url": "In Home Assistant ist keine externe Adresse hinterlegt. Trage sie unter Einstellungen → System → Netzwerk ein oder in der App-Konfiguration als „Öffentliche Adresse“ – bis dahin den Platzhalter ersetzen.",
-    },
-}
 
 CSRF_TOKEN = secrets.token_urlsafe(24)
 FLASH: dict = {}
@@ -1404,9 +1158,48 @@ def _config_url() -> str:
     return f"/config/app/{slug}/config"
 
 
+DOCS_BASE = "https://github.com/mw-hbg/ha-apps/blob/main/garmin_mcp"
+LANG_COOKIE = "garmin_mcp_lang"
+_ha_language_cache: tuple[float, str] = (0.0, "")
+
+
+def ha_language() -> str:
+    """Language set in Home Assistant (Settings → System → General)."""
+    global _ha_language_cache
+    cached_at, value = _ha_language_cache
+    if time.time() - cached_at < 600:
+        return value
+    cfg = core_api("GET", "/config", quiet=True)
+    value = str(cfg.get("language") or "") if isinstance(cfg, dict) else ""
+    _ha_language_cache = (time.time(), value)
+    return value
+
+
 def _lang(request: Request) -> str:
-    accept = request.headers.get("accept-language", "").lower()
-    return "de" if accept.startswith("de") else "en"
+    """Language chosen on the page > browser language > Home Assistant language > English."""
+    return i18n.pick(
+        request.cookies.get(LANG_COOKIE),
+        i18n.from_accept_language(request.headers.get("accept-language")),
+        ha_language(),
+    )
+
+
+def detail_text(t: dict, detail: str) -> str:
+    """Details starting with "@" are translated ("@key" or "@key|value")."""
+    if not detail.startswith("@"):
+        return html.escape(detail)
+    key, _, value = detail[1:].partition("|")
+    return html.escape(t.get("detail_" + key, key).format(value=value))
+
+
+def _language_links(request: Request, current: str) -> str:
+    links = []
+    for code, name in i18n.names().items():
+        if code == current:
+            links.append(f"<b>{html.escape(name)}</b>")
+        else:
+            links.append(f'<a href="lang?l={code}">{html.escape(name)}</a>')
+    return " · ".join(links) if len(links) > 1 else ""
 
 
 def _guard(request: Request) -> Response | None:
@@ -1449,7 +1242,8 @@ def _secret_field(fid: str, value: str, t: dict) -> str:
 async def index(request: Request) -> Response:
     if (denied := _guard(request)) is not None:
         return denied
-    t = TEXT[_lang(request)]
+    lang = _lang(request)
+    t = i18n.ui(lang)
     services = SERVICES
     csrf = f'<input type="hidden" name="csrf" value="{CSRF_TOKEN}">'
     parts = [f"<h1>{t['title']}</h1>"]
@@ -1503,9 +1297,8 @@ async def index(request: Request) -> Response:
     custom = SELECTION_FILE.exists()
     wa = services.options.get("write_access", "create_only")
     rights = t["custom_selection"] if custom else t.get("wa_" + wa, wa)
-    lang = _lang(request)
     rows = []
-    for module, (_, en, de) in sorted(tool_texts.CATEGORIES.items(), key=lambda kv: kv[1][0]):
+    for module in i18n.CATEGORY_ORDER:
         tools_in = [e for e in CATALOG if e["module"] == module]
         if not tools_in:
             continue
@@ -1515,7 +1308,7 @@ async def index(request: Request) -> Response:
             f'<span class="badge {k}">{t["kind_" + k]}</span>' for k in ("read", "create", "change") if k in kinds
         ) or f'<span class="muted">{t["nothing"]}</span>'
         rows.append(
-            f'<tr><td>{de if lang == "de" else en}</td><td class="num">{len(on)}/{len(tools_in)}</td><td>{badges}</td></tr>'
+            f'<tr><td>{html.escape(i18n.category(lang, module))}</td><td class="num">{len(on)}/{len(tools_in)}</td><td>{badges}</td></tr>'
         )
     parts.append(
         f'<div class="card"><h2>{t["server"]}</h2><table>'
@@ -1539,7 +1332,7 @@ async def index(request: Request) -> Response:
     if TEST_RESULT:
         items = "".join(
             f'<tr><td>{"✅" if c["ok"] else "❌"}</td><td>{t[c["key"]]}</td>'
-            f'<td class="muted">{t.get("detail_" + c["detail"][1:], "") if c["detail"].startswith("@") else html.escape(c["detail"])}</td></tr>'
+            f'<td class="muted">{detail_text(t, c["detail"])}</td></tr>'
             for c in TEST_RESULT["checks"]
         )
         test_html = (
@@ -1573,7 +1366,7 @@ async def index(request: Request) -> Response:
         parts.append(
             f'<table><tr><td class="muted">{t["remote"]}</td>'
             f'<td class="{rcls}">{t["remote_" + rstate]}'
-            + (f' <span class="muted">({html.escape(remote.detail)})</span>' if rstate == "error" and remote.detail else "")
+            + (f' <span class="muted">({detail_text(t, remote.detail)})</span>' if rstate == "error" and remote.detail else "")
             + "</td></tr></table>"
         )
         parts.append(
@@ -1595,8 +1388,10 @@ async def index(request: Request) -> Response:
     parts.append("</div>")
 
     parts.append(
-        f'<p class="muted footer">Garmin Connect MCP {html.escape(os.environ.get("ADDON_VERSION", "dev"))}'
-        f' · <a href="https://github.com/mw-hbg/ha-addons/blob/main/garmin_mcp/DOCS.md" target="_blank" rel="noopener">{t["docs"]}</a></p>'
+        f'<p class="muted footer">Garmin Connect MCP {html.escape(os.environ.get("APP_VERSION", "dev"))}'
+        f' · <a href="{DOCS_BASE}/{t["docs_file"]}" target="_blank" rel="noopener">{t["docs"]}</a>'
+        + (f" · {links}" if (links := _language_links(request, lang)) else "")
+        + "</p>"
     )
     body = "".join(parts)
     page = (
@@ -1705,8 +1500,8 @@ document.addEventListener('change',e=>{if(e.target.matches('.tool input'))count(
 async def tools_page(request: Request) -> Response:
     if (denied := _guard(request)) is not None:
         return denied
-    t = TEXT[_lang(request)]
     lang = _lang(request)
+    t = i18n.ui(lang)
     active = SERVICES.active_tools
     csrf = f'<input type="hidden" name="csrf" value="{CSRF_TOKEN}">'
     parts = [f'<p><a href="./">{t["back"]}</a></p><h1>{t["tools_title"]}</h1>']
@@ -1726,14 +1521,15 @@ async def tools_page(request: Request) -> Response:
         f'<button type="button" class="secondary" onclick="preset([])">{t["preset_none"]}</button></div></div>'
         f'<form method="post" action="tools" onsubmit="return busy(this)">{csrf}'
     )
-    for module, (_, en, de) in sorted(tool_texts.CATEGORIES.items(), key=lambda kv: kv[1][0]):
+    for module in i18n.CATEGORY_ORDER:
+        cat = i18n.category(lang, module)
         entries = sorted((e for e in CATALOG if e["module"] == module), key=lambda e: ("read", "create", "change").index(e["kind"]))
         if not entries:
             continue
-        parts.append(f'<details class="card" open><summary>{de if lang == "de" else en} <span class="muted ccount"></span></summary>')
+        parts.append(f'<details class="card" open><summary>{html.escape(cat)} <span class="muted ccount"></span></summary>')
         for e in entries:
-            label = tool_texts.DE.get(e["name"], e["doc"]) if lang == "de" else (e["doc"] or e["name"])
-            search = html.escape(f'{e["name"]} {label} {e["doc"]} {de} {en}'.lower(), quote=True)
+            label = i18n.tool(lang, e["name"], e["doc"])
+            search = html.escape(f'{e["name"]} {label} {e["doc"]} {cat} {i18n.category("en", module)}'.lower(), quote=True)
             checked = " checked" if e["name"] in active else ""
             parts.append(
                 f'<div class="tool" data-search="{search}">'
@@ -1744,9 +1540,9 @@ async def tools_page(request: Request) -> Response:
                 +
                 f'<div class="infobox"><b>{t["info_name"]}:</b> <code>{e["name"]}</code><br>'
                 f'<b>{t["info_kind"]}:</b> {t["info_kind_" + e["kind"]]}'
-                + (f'<br><b>{t["info_original"]}:</b> {html.escape(e["doc"])}' if lang == "de" and e["doc"] else "")
+                + (f'<br><b>{t["info_original"]}:</b> {html.escape(e["doc"])}' if e["doc"] and e["doc"].rstrip(".") != label.rstrip(".") else "")
                 + '</div></div>'
-                '<button type="button" class="info" onclick="info(this)" aria-label="Info">i</button></div>'
+                f'<button type="button" class="info" onclick="info(this)" aria-label="{t["info"]}">i</button></div>'
             )
         parts.append("</details>")
     parts.append(
@@ -1795,6 +1591,18 @@ async def do_test(request: Request) -> Response:
         TEST_RESULT.clear()
         TEST_RESULT.update(await anyio.to_thread.run_sync(run_connection_test))
     return _redirect(request)
+
+
+async def set_language(request: Request) -> Response:
+    """Language links in the footer: remember the choice in a cookie."""
+    if (denied := _guard(request)) is not None:
+        return denied
+    response = _redirect(request)
+    lang = i18n.supported(request.query_params.get("l"))
+    if lang:
+        base = request.headers.get("x-ingress-path", "") or "/"
+        response.set_cookie(LANG_COOKIE, lang, max_age=365 * 86400, path=base, httponly=True, samesite="strict")
+    return response
 
 
 async def status(request: Request) -> Response:
@@ -1853,6 +1661,7 @@ app = Starlette(
         Route("/restart-ha", do_restart_ha, methods=["POST"]),
         Route("/test", do_test, methods=["POST"]),
         Route("/status.json", status),
+        Route("/lang", set_language),
         Route("/tools", tools_page),
         Route("/tools", save_tools, methods=["POST"]),
         Route("/tools/reset", reset_tools, methods=["POST"]),

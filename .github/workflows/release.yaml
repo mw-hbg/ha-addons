@@ -80,8 +80,8 @@ jobs:
             BUILD_VERSION=${{ needs.prepare.outputs.version }}
             BUILD_ARCH=${{ matrix.arch }}
           tags: |
-            ghcr.io/${{ needs.prepare.outputs.owner }}/${{ matrix.arch }}-addon-garmin-mcp:${{ needs.prepare.outputs.version }}
-            ghcr.io/${{ needs.prepare.outputs.owner }}/${{ matrix.arch }}-addon-garmin-mcp:latest
+            ghcr.io/${{ needs.prepare.outputs.owner }}/${{ matrix.arch }}-app-garmin-mcp:${{ needs.prepare.outputs.version }}
+            ghcr.io/${{ needs.prepare.outputs.owner }}/${{ matrix.arch }}-app-garmin-mcp:latest
           cache-from: type=gha,scope=${{ matrix.arch }}
           cache-to: type=gha,mode=max,scope=${{ matrix.arch }}
 

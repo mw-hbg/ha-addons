@@ -5,9 +5,9 @@ slug: garmin_mcp
 description: >-
   MCP server for Garmin Connect – let AI assistants (Claude, ChatGPT, …)
   read your training and health data and plan workouts on your watch.
-url: https://github.com/mw-hbg/ha-addons
+url: https://github.com/mw-hbg/ha-apps
 # Pre-built images from GitHub Actions. Remove this line to build locally.
-image: ghcr.io/mw-hbg/{arch}-addon-garmin-mcp
+image: ghcr.io/mw-hbg/{arch}-app-garmin-mcp
 arch:
   - amd64
   - aarch64

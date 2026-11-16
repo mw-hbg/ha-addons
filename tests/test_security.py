@@ -147,10 +147,10 @@ def test_secret_files_are_private():
 # --- texts used inside JavaScript confirm('...') must not contain quotes -------------
 
 def test_confirm_texts_cannot_break_javascript():
-    for lang in L.TEXT.values():
-        for key, value in lang.items():
+    for code in L.i18n.LANGUAGES:
+        for key, value in L.i18n.ui(code).items():
             if key.endswith("_confirm"):
                 assert "'" not in value and "\\\\" not in value, (key, value)
-    for lang in L.TEXT.values():
-        for key, value in lang.items():
+    for code in L.i18n.LANGUAGES:
+        for key, value in L.i18n.ui(code).items():
             assert "<" not in value or key in ("tools_intro",), key

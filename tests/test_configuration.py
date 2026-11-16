@@ -9,7 +9,7 @@ import pytest
 
 import launcher as L
 
-ADDON = Path(__file__).resolve().parent.parent / "garmin_mcp"
+APP_DIR = Path(__file__).resolve().parent.parent / "garmin_mcp"
 
 
 def opts(**kwargs):
@@ -31,30 +31,31 @@ def _top_keys(text: str, section: str) -> list[str]:
 
 
 def test_options_schema_defaults_and_translations_match():
-    cfg = (ADDON / "config.yaml").read_text()
+    cfg = (APP_DIR / "config.yaml").read_text()
     options = _top_keys(cfg, "options")
     schema = _top_keys(cfg, "schema")
     assert options == schema
     assert set(options) == set(L.DEFAULT_OPTIONS)
     for lang in ("en", "de"):
-        text = (ADDON / "translations" / f"{lang}.yaml").read_text()
+        text = (APP_DIR / "translations" / f"{lang}.yaml").read_text()
         assert _top_keys(text, "configuration") == options, lang
 
 
 def test_documentation_lists_every_option():
-    docs = (ADDON / "DOCS.md").read_text()
-    for key in L.DEFAULT_OPTIONS:
-        assert f"| `{key}` |" in docs, key
+    for name in ("DOCS.md", "DOCS.de.md"):
+        docs = (APP_DIR / name).read_text()
+        for key in L.DEFAULT_OPTIONS:
+            assert f"| `{key}` |" in docs, (name, key)
 
 
 def test_area_names_match_the_server_profiles():
     from garmin_mcp.tool_profiles import TOOL_PROFILES
 
-    cfg = (ADDON / "config.yaml").read_text()
+    cfg = (APP_DIR / "config.yaml").read_text()
     areas = re.search(r'"list\((all\|minimal[^)]*)\)"', cfg).group(1).split("|")
     assert set(areas) == set(TOOL_PROFILES)
     for lang in ("en", "de"):
-        text = (ADDON / "translations" / f"{lang}.yaml").read_text()
+        text = (APP_DIR / "translations" / f"{lang}.yaml").read_text()
         for area in areas:
             assert re.search(rf"^\s+{area} = ", text, re.M), (lang, area)
 

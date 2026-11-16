@@ -9,7 +9,7 @@ ARG UPSTREAM_REF=a2ca5fcac34524b83814fe2fcf3d479f8a75983f
 ARG BUILD_VERSION=dev
 ARG BUILD_ARCH=amd64
 
-ENV ADDON_VERSION=${BUILD_VERSION} \
+ENV APP_VERSION=${BUILD_VERSION} \
     PYTHONUNBUFFERED=1 \
     PYTHONDONTWRITEBYTECODE=1 \
     PIP_NO_CACHE_DIR=1 \
@@ -33,10 +33,9 @@ COPY rootfs/ /
 LABEL \
     io.hass.name="Garmin Connect MCP" \
     io.hass.description="MCP server for Garmin Connect" \
-    io.hass.type="addon" \
     io.hass.version="${BUILD_VERSION}" \
     io.hass.arch="${BUILD_ARCH}" \
-    org.opencontainers.image.source="https://github.com/mw-hbg/ha-addons" \
+    org.opencontainers.image.source="https://github.com/mw-hbg/ha-apps" \
     org.opencontainers.image.licenses="MIT"
 
 # Health check: the Supervisor restarts the app when the web UI stops answering

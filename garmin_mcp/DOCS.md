@@ -1,5 +1,7 @@
 # Garmin Connect MCP
 
+[🇩🇪 Deutsche Anleitung](https://github.com/mw-hbg/ha-apps/blob/main/garmin_mcp/DOCS.de.md)
+
 This app runs an [MCP](https://modelcontextprotocol.io) server for your
 Garmin Connect account inside Home Assistant. AI assistants that support remote
 MCP servers – Claude, ChatGPT and many others – can then read your training and
@@ -42,18 +44,18 @@ AI assistant ──HTTPS──► your Home Assistant address ──► /api/web
 
 ## Setup
 
-Requires Home Assistant **2026.2** or newer (OS or Supervised). Apps were called *add-ons* before Home Assistant 2026.2. The app is
+Requires Home Assistant **2026.2** or newer (OS or Supervised). The app is
 marked *experimental* until version 1.0.
 
 ### 1. Install and start
 
-Install the app, start it and open **Garmin MCP** in the sidebar
-(or **Open Web UI** on the app page).
+*Settings → Apps → Install app → ⋮ → Repositories*, add
+`https://github.com/mw-hbg/ha-apps`. Then install **Garmin Connect MCP**, start it and
+open **Garmin MCP** in the sidebar (or **Open Web UI** on the app page).
 
 ### 2. Log in to Garmin Connect
 
-Enter your Garmin e-mail and password. If two-factor authentication is enabled,
-Garmin sends you a code – enter it on the next screen.
+Enter your Garmin e-mail and password.
 
 **Two-factor authentication** is supported. If it is enabled for your Garmin
 account, Garmin sends you a code (app, e-mail or SMS) and the app asks for
@@ -79,7 +81,7 @@ version of the helper integration, Home Assistant shows a **repair notice**
 Requirement: Home Assistant must already be reachable from the internet over
 HTTPS (Nabu Casa, Cloudflare Tunnel, reverse proxy, …). The app uses the
 external URL from *Settings → System → Network* (or your Nabu Casa address).
-If it cannot work it out, enter it as **Public base URL** in the app
+If it cannot work it out, enter it as **Public address** in the app
 configuration.
 
 <details>
@@ -95,7 +97,7 @@ additional_hosts:
     service: http://abcd1234-garmin-mcp:8100
 ```
 
-Enter that hostname as **Public base URL**. Never forward port 8100 on your
+Enter that hostname as **Public address**. Never forward port 8100 on your
 router without HTTPS.
 
 Best set `direct` before the first start. If you switch later, the app
@@ -134,6 +136,9 @@ Copy the **Connector URL** from the app page. It looks like
   notification and – when you click the button – to restart Home Assistant. It
   does not read or change anything else. With `remote_access: direct` it does
   not touch the configuration folder at all.
+* **The AI cannot reach your files:** file tools (upload a course, download an
+  activity) only work inside the app's own download folder. The MCP server gets no
+  access to Home Assistant.
 * **Choose the write access level deliberately** (see below). `read_only` is the
   safest; `create_only` (default) never deletes or overwrites anything.
 * **Optional extra layer – IP allow list:** if you only use one AI service, you
@@ -158,8 +163,20 @@ Each failed check comes with a hint what to do.
 * **Restart required** – after installing, and after updates of the helper
   integration (banner on the app page, notification, repair notice).
 * **Garmin login no longer valid** – e.g. when the tokens expired after about
-  six months or were revoked. Home Assistant shows a notification; log in again
-  on the app page. The AI app also gets a clear message instead of an error.
+  six months or were revoked. Temporary errors (no internet after a power cut,
+  Garmin down) are fixed by the app itself by retrying; only if that does not help,
+  Home Assistant shows a notification (can be switched off with
+  `login_notification`). Then log in again on the app page. The AI app gets a clear
+  message instead of an error.
+
+Notifications use the Home Assistant language (*Settings → System → General*).
+
+## Language
+
+The app page uses your browser language, otherwise the Home Assistant language,
+otherwise English. You can switch the language at the bottom of the page; your browser
+remembers the choice. English and German are available – adding another language is
+easy, see [TRANSLATING.md](https://github.com/mw-hbg/ha-apps/blob/main/garmin_mcp/TRANSLATING.md).
 
 ## Choosing tools
 
@@ -258,164 +275,167 @@ The MCP server is [Taxuspt/garmin_mcp](https://github.com/Taxuspt/garmin_mcp)
 *Type*: **read** = only reads data · **create** = adds something new ·
 **change/delete** = changes, overwrites or removes existing data (only with
 `write_access: full`). *Areas* lists the `tool_areas` that include the tool;
-`–` means only `all`.
+`–` means only `all`. This table is generated from the code
+(`scripts/update_docs.py`).
 
-| Tool | Type | Areas |
-|---|---|---|
-| `add_body_composition` | create | health |
-| `add_gear_to_activity` | create | activities |
-| `add_hydration_data` | create | health, nutrition |
-| `add_weigh_in` | create | health |
-| `add_weigh_in_with_timestamps` | create | health |
-| `count_activities` | read | activities |
-| `create_custom_food` | create | nutrition |
-| `create_manual_activity` | create | activities |
-| `create_run_interval_workout` | create | workouts |
-| `create_run_workout` | create | workouts |
-| `create_strength_workout` | create | workouts |
-| `create_walk_run_workout` | create | workouts |
-| `create_z2_walk_workout` | create | workouts |
-| `delete_activity` | change/delete | activities |
-| `delete_course` | change/delete | activities |
-| `delete_custom_food` | change/delete | nutrition |
-| `delete_food_log` | change/delete | nutrition |
-| `delete_weigh_ins` | change/delete | health |
-| `delete_workout` | change/delete | workouts |
-| `delete_workouts` | change/delete | workouts |
-| `download_activity_file` | change/delete | activities |
-| `download_course_gpx` | change/delete | activities |
-| `download_workout` | change/delete | workouts |
-| `get_acclimation` | read | training |
-| `get_activities` | read | minimal, activities |
-| `get_activities_by_date` | read | minimal, activities |
-| `get_activities_fordate` | read | activities |
-| `get_activity` | read | minimal, activities |
-| `get_activity_exercise_sets` | read | activities |
-| `get_activity_fit_data` | read | activities |
-| `get_activity_fit_messages` | read | activities |
-| `get_activity_gear` | read | activities |
-| `get_activity_hr_in_timezones` | read | activities |
-| `get_activity_power_in_timezones` | read | activities |
-| `get_activity_split_summaries` | read | activities |
-| `get_activity_splits` | read | minimal, activities |
-| `get_activity_typed_splits` | read | activities |
-| `get_activity_types` | read | activities |
-| `get_activity_weather` | read | activities |
-| `get_adhoc_challenges` | read | training |
-| `get_all_day_events` | read | health |
-| `get_all_day_stress` | read | health |
-| `get_available_badge_challenges` | read | training |
-| `get_badge_challenges` | read | training |
-| `get_blood_pressure` | read | health |
-| `get_body_battery` | read | minimal, health |
-| `get_body_battery_events` | read | health |
-| `get_body_composition` | read | health |
-| `get_calendar_events` | read | workouts |
-| `get_course_details` | read | activities |
-| `get_courses` | read | activities |
-| `get_custom_food_serving_units` | read | nutrition |
-| `get_custom_foods` | read | nutrition |
-| `get_cycling_ftp` | read | training |
-| `get_daily_steps` | read | minimal, health |
-| `get_daily_weigh_ins` | read | health |
-| `get_device_alarms` | read | – |
-| `get_device_last_used` | read | – |
-| `get_device_settings` | read | – |
-| `get_device_solar_data` | read | – |
-| `get_devices` | read | – |
-| `get_earned_badges` | read | training |
-| `get_endurance_score` | read | training |
-| `get_energy_balance` | read | health, nutrition |
-| `get_fitnessage_data` | read | health, training |
-| `get_floors` | read | health |
-| `get_full_name` | read | minimal, health, activities, workouts, training, nutrition |
-| `get_garmin_coach_workouts` | read | workouts |
-| `get_gear` | read | activities |
-| `get_goals` | read | training |
-| `get_heart_rate_zones` | read | minimal, health, activities, workouts, training, nutrition |
-| `get_heart_rates` | read | health |
-| `get_heart_rates_summary` | read | minimal, health |
-| `get_hill_score` | read | training |
-| `get_hrv_data` | read | minimal, health, training |
-| `get_hrv_trend` | read | health, training |
-| `get_hydration_data` | read | health, nutrition |
-| `get_inprogress_virtual_challenges` | read | training |
-| `get_lactate_threshold` | read | training |
-| `get_lifestyle_logging_data` | read | health |
-| `get_menstrual_calendar_data` | read | health |
-| `get_menstrual_data_for_date` | read | health |
-| `get_morning_training_readiness` | read | health, training |
-| `get_non_completed_badge_challenges` | read | training |
-| `get_nutrition_daily_food_log` | read | nutrition |
-| `get_nutrition_daily_meals` | read | nutrition |
-| `get_nutrition_daily_settings` | read | nutrition |
-| `get_nutrition_summary_between_dates` | read | nutrition |
-| `get_personal_record` | read | training |
-| `get_power_duration_curve` | read | activities, training |
-| `get_pregnancy_summary` | read | health |
-| `get_primary_training_device` | read | training |
-| `get_progress_summary_between_dates` | read | training |
-| `get_race_predictions` | read | training |
-| `get_recovery_time_remaining` | read | health, training |
-| `get_respiration_data` | read | health |
-| `get_respiration_summary` | read | health |
-| `get_respiration_trend` | read | health, training |
-| `get_rhr_day` | read | health |
-| `get_running_tolerance` | read | training |
-| `get_running_tolerance_trend` | read | training |
-| `get_scheduled_workouts` | read | workouts |
-| `get_sleep_data` | read | minimal, health |
-| `get_sleep_summary` | read | minimal, health |
-| `get_sleep_summary_range` | read | health |
-| `get_spo2_data` | read | health |
-| `get_stats` | read | minimal, health |
-| `get_stats_and_body` | read | health |
-| `get_stats_range` | read | health |
-| `get_steps_data` | read | health |
-| `get_stress_data` | read | health |
-| `get_stress_summary` | read | minimal, health |
-| `get_training_effect` | read | training |
-| `get_training_load_balance` | read | training |
-| `get_training_load_trend` | read | training |
-| `get_training_plan_workouts` | read | workouts |
-| `get_training_readiness` | read | minimal, health, training |
-| `get_training_status` | read | minimal, training |
-| `get_unit_system` | read | minimal, health, activities, workouts, training, nutrition |
-| `get_user_profile` | read | minimal, health, activities, workouts, training, nutrition |
-| `get_user_summary` | read | minimal, health |
-| `get_userprofile_settings` | read | minimal, health, activities, workouts, training, nutrition |
-| `get_vo2max_trend` | read | training |
-| `get_weekly_intensity_minutes` | read | health, training |
-| `get_weekly_steps` | read | health |
-| `get_weekly_stress` | read | health |
-| `get_weigh_ins` | read | health |
-| `get_workout_by_id` | read | workouts |
-| `get_workouts` | read | workouts |
-| `log_custom_food` | create | nutrition |
-| `log_food` | create | nutrition |
-| `push_workout_to_device` | create | – |
-| `remove_gear_from_activity` | change/delete | activities |
-| `request_reload` | create | training |
-| `reschedule_workout` | change/delete | – |
-| `schedule_week` | create | workouts |
-| `schedule_workout` | create | workouts |
-| `schedule_workouts` | create | workouts |
-| `search_foods` | read | nutrition |
-| `set_activity_description` | change/delete | activities |
-| `set_activity_event_type` | change/delete | activities |
-| `set_activity_exercise_sets` | change/delete | activities |
-| `set_activity_feel` | change/delete | activities |
-| `set_activity_name` | change/delete | activities |
-| `set_activity_type` | change/delete | activities |
-| `set_blood_pressure` | create | health |
-| `set_fit_download_dir` | create | activities |
-| `set_heart_rate_zones` | change/delete | – |
-| `set_nutrition_daily_settings` | change/delete | nutrition |
-| `set_perceived_effort` | change/delete | activities |
-| `unschedule_workout` | change/delete | workouts |
-| `unschedule_workouts` | change/delete | workouts |
-| `update_custom_food` | change/delete | nutrition |
-| `upload_course` | create | activities |
-| `upload_workout` | create | workouts |
-| `upload_workouts` | create | workouts |
-| `upsert_and_log` | create | nutrition |
+<!-- tools:start -->
+| Tool | What it does | Type | Areas |
+|---|---|---|---|
+| `add_body_composition` | Add body composition data. | create | health |
+| `add_gear_to_activity` | Associate gear with an activity. | create | activities |
+| `add_hydration_data` | Add hydration data. | create | health, nutrition |
+| `add_weigh_in` | Add a new weight measurement. | create | health |
+| `add_weigh_in_with_timestamps` | Add a new weight measurement with specific timestamps. | create | health |
+| `count_activities` | Get total count of activities in the user's Garmin account. | read | activities |
+| `create_custom_food` | Create a custom food in the user's Garmin nutrition library. | create | nutrition |
+| `create_manual_activity` | Log a manual activity in Garmin Connect — useful for activities done without a watch. | create | activities |
+| `create_run_interval_workout` | Create a repeat-based interval run workout and upload it to Garmin Connect. | create | workouts |
+| `create_run_workout` | Create a continuous run workout and upload it to Garmin Connect. | create | workouts |
+| `create_strength_workout` | Create a strength workout and upload it to Garmin Connect. | create | workouts |
+| `create_walk_run_workout` | Create a walk/run interval workout and upload it to Garmin Connect. | create | workouts |
+| `create_z2_walk_workout` | Create a steady Z2 walking workout and upload it to Garmin Connect. | create | workouts |
+| `delete_activity` | Permanently delete an activity from Garmin Connect. | change/delete | activities |
+| `delete_course` | Delete a course from Garmin Connect. | change/delete | activities |
+| `delete_custom_food` | Delete a custom food from the user's Garmin nutrition library. | change/delete | nutrition |
+| `delete_food_log` | Delete a food log entry. | change/delete | nutrition |
+| `delete_weigh_ins` | Delete weight measurements for a specific date. | change/delete | health |
+| `delete_workout` | Delete a workout from Garmin Connect. | change/delete | workouts |
+| `delete_workouts` | Delete multiple workouts from Garmin Connect in a single call. | change/delete | workouts |
+| `download_activity_file` | Download an activity and save it to disk as a file. | change/delete | activities |
+| `download_course_gpx` | Download a Garmin Connect course as a GPX file. | change/delete | activities |
+| `download_workout` | Download a workout as a FIT file. | change/delete | workouts |
+| `get_acclimation` | Get heat and altitude acclimation status for a given date. | read | training |
+| `get_activities` | Get activities with pagination support. | read | minimal, activities |
+| `get_activities_by_date` | Get activities between specified dates with pagination support. | read | minimal, activities |
+| `get_activities_fordate` | Get activities for a specific date. | read | activities |
+| `get_activity` | Get detailed information for a single activity. | read | minimal, activities |
+| `get_activity_exercise_sets` | Get exercise sets for strength training activities. | read | activities |
+| `get_activity_fit_data` | Download and parse FIT file for an activity to expose advanced cycling data. | read | activities |
+| `get_activity_fit_messages` | Retrieve and generically parse an activity's original FIT file. | read | activities |
+| `get_activity_gear` | Get gear data used for an activity. | read | activities |
+| `get_activity_hr_in_timezones` | Get heart rate data in different time zones for an activity. | read | activities |
+| `get_activity_power_in_timezones` | Get power distribution across training zones for an activity. | read | activities |
+| `get_activity_split_summaries` | Get split summaries for an activity. | read | activities |
+| `get_activity_splits` | Get splits for an activity. | read | minimal, activities |
+| `get_activity_typed_splits` | Get typed splits for an activity. | read | activities |
+| `get_activity_types` | Get all available activity types. | read | activities |
+| `get_activity_weather` | Get weather data for an activity. | read | activities |
+| `get_adhoc_challenges` | Get user-created social/group challenges (e.g., step competitions with friends). | read | training |
+| `get_all_day_events` | Get daily wellness events data. | read | health |
+| `get_all_day_stress` | Get all-day stress data. | read | health |
+| `get_available_badge_challenges` | Get official Garmin badge challenges available to join. | read | training |
+| `get_badge_challenges` | Get badge challenges the user has completed. | read | training |
+| `get_blood_pressure` | Get blood pressure data. | read | health |
+| `get_body_battery` | Get body battery data with events. | read | minimal, health |
+| `get_body_battery_events` | Get body battery events data. | read | health |
+| `get_body_composition` | Get body composition data for a single date or date range. | read | health |
+| `get_calendar_events` | Get races and events on the Garmin Connect calendar between two dates. | read | workouts |
+| `get_course_details` | Get full details of a Garmin Connect course by ID. | read | activities |
+| `get_courses` | List all courses saved on Garmin Connect. | read | activities |
+| `get_custom_food_serving_units` | Get available serving units for custom foods. | read | nutrition |
+| `get_custom_foods` | Search or list user's custom foods. | read | nutrition |
+| `get_cycling_ftp` | Get the latest cycling Functional Threshold Power (FTP) data. | read | training |
+| `get_daily_steps` | Get steps data for a date range. | read | minimal, health |
+| `get_daily_weigh_ins` | Get weight measurements for a specific date. | read | health |
+| `get_device_alarms` | Get alarms from all Garmin devices. | read | – |
+| `get_device_last_used` | Get information about the last used Garmin device. | read | – |
+| `get_device_settings` | Get settings for a specific Garmin device. | read | – |
+| `get_device_solar_data` | Get solar data for a specific device. | read | – |
+| `get_devices` | Get all Garmin devices associated with the user account. | read | – |
+| `get_earned_badges` | Get earned badges for user. | read | training |
+| `get_endurance_score` | Get endurance score data between dates. | read | training |
+| `get_energy_balance` | Estimate daily energy expenditure from logged food, Garmin's calorie estimate and body composition changes over a date range. | read | health, nutrition |
+| `get_fitnessage_data` | Get fitness age data. | read | health, training |
+| `get_floors` | Get floors climbed data. | read | health |
+| `get_full_name` | Get user's full name from profile. | read | minimal, health, activities, workouts, training, nutrition |
+| `get_garmin_coach_workouts` | Get Garmin Coach workouts around the given date. | read | workouts |
+| `get_gear` | Get all gear registered with the user account. | read | activities |
+| `get_goals` | Get Garmin Connect goals (active, future, or past). | read | training |
+| `get_heart_rate_zones` | Get the user's saved heart-rate training-zone configuration. | read | minimal, health, activities, workouts, training, nutrition |
+| `get_heart_rates` | Get full heart rate time-series data. | read | health |
+| `get_heart_rates_summary` | Get heart rate summary with essential metrics (lightweight version). | read | minimal, health |
+| `get_hill_score` | Get hill score data between dates. | read | training |
+| `get_hrv_data` | Get Heart Rate Variability (HRV) data. | read | minimal, health, training |
+| `get_hrv_trend` | Get HRV (Heart Rate Variability) trend over a date range. | read | health, training |
+| `get_hydration_data` | Get hydration data. | read | health, nutrition |
+| `get_inprogress_virtual_challenges` | Get in-progress virtual challenges/expeditions. | read | training |
+| `get_lactate_threshold` | Get lactate threshold data. | read | training |
+| `get_lifestyle_logging_data` | Get lifestyle logging data for a specific date. | read | health |
+| `get_menstrual_calendar_data` | Get menstrual calendar data between specified dates. | read | health |
+| `get_menstrual_data_for_date` | Get menstrual data for a specific date. | read | health |
+| `get_morning_training_readiness` | Get morning training readiness score. | read | health, training |
+| `get_non_completed_badge_challenges` | Get badge challenges currently in progress (not yet completed). | read | training |
+| `get_nutrition_daily_food_log` | Get daily food consumption records for a date. | read | nutrition |
+| `get_nutrition_daily_meals` | Get daily meal summaries for a date. | read | nutrition |
+| `get_nutrition_daily_settings` | Get nutrition plan/settings for a date. | read | nutrition |
+| `get_nutrition_summary_between_dates` | Get per-day nutrition totals for every day in a date range. | read | nutrition |
+| `get_personal_record` | Get personal records for user. | read | training |
+| `get_power_duration_curve` | Get season-best Power Duration Curve across recent activities. | read | activities, training |
+| `get_pregnancy_summary` | Get pregnancy summary data. | read | health |
+| `get_primary_training_device` | Get information about the primary training device. | read | training |
+| `get_progress_summary_between_dates` | Get progress summary for a metric between dates. | read | training |
+| `get_race_predictions` | Get predicted race times based on current fitness level. | read | training |
+| `get_recovery_time_remaining` | Get remaining recovery time in hours for a day. | read | health, training |
+| `get_respiration_data` | Get full respiration time-series data. | read | health |
+| `get_respiration_summary` | Get respiration summary with essential metrics (lightweight version). | read | health |
+| `get_respiration_trend` | Get overnight respiration rate trend over a date range. | read | health, training |
+| `get_rhr_day` | Get resting heart rate data. | read | health |
+| `get_running_tolerance` | Get Running Tolerance for a single day. | read | training |
+| `get_running_tolerance_trend` | Get Running Tolerance trend over a date range. | read | training |
+| `get_scheduled_workouts` | Get scheduled workouts between two dates with curated summary list. | read | workouts |
+| `get_sleep_data` | Get full sleep data with all details. | read | minimal, health |
+| `get_sleep_summary` | Get sleep summary with only essential metrics (lightweight version). | read | minimal, health |
+| `get_sleep_summary_range` | Get lightweight sleep summaries for every night in a date range. | read | health |
+| `get_spo2_data` | Get SpO2 (blood oxygen) data. | read | health |
+| `get_stats` | Get daily activity stats with curated essential metrics. | read | minimal, health |
+| `get_stats_and_body` | Get stats and body composition data. | read | health |
+| `get_stats_range` | Get lightweight per-day calorie and step totals for a date range. | read | health |
+| `get_steps_data` | Get detailed steps data with 15-minute intervals. | read | health |
+| `get_stress_data` | Get full stress time-series data. | read | health |
+| `get_stress_summary` | Get stress summary with essential metrics (lightweight version). | read | minimal, health |
+| `get_training_effect` | Get training effect data for a specific activity. | read | training |
+| `get_training_load_balance` | Get Garmin's Load Focus: how the training load of the last month is split across aerobic low, aerobic high and anaerobic, with Garmin's feedback. | read | training |
+| `get_training_load_trend` | Get Garmin's daily acute and chronic training load over a date range. | read | training |
+| `get_training_plan_workouts` | Compatibility alias for get_garmin_coach_workouts. | read | workouts |
+| `get_training_readiness` | Get training readiness data with curated metrics. | read | minimal, health, training |
+| `get_training_status` | Get training status with curated metrics. | read | minimal, training |
+| `get_unit_system` | Get user's preferred unit system from profile. | read | minimal, health, activities, workouts, training, nutrition |
+| `get_user_profile` | Get user profile information. | read | minimal, health, activities, workouts, training, nutrition |
+| `get_user_summary` | Get user summary data (compatible with garminconnect-ha). | read | minimal, health |
+| `get_userprofile_settings` | Get user profile settings. | read | minimal, health, activities, workouts, training, nutrition |
+| `get_vo2max_trend` | Get VO2 max trend over a date range. | read | training |
+| `get_weekly_intensity_minutes` | Get weekly intensity minutes data aggregates. | read | health, training |
+| `get_weekly_steps` | Get weekly step data aggregates. | read | health |
+| `get_weekly_stress` | Get weekly stress data aggregates. | read | health |
+| `get_weigh_ins` | Get weight measurements between specified dates. | read | health |
+| `get_workout_by_id` | Get detailed information for a specific workout. | read | workouts |
+| `get_workouts` | Get all workouts with curated summary list. | read | workouts |
+| `log_custom_food` | Log a food item to a meal on a date. | create | nutrition |
+| `log_food` | Quick-add a food entry with macro values to the nutrition log. | create | nutrition |
+| `push_workout_to_device` | Send a workout from the workout library to a Garmin device. | create | workouts |
+| `remove_gear_from_activity` | Remove gear association from an activity. | change/delete | activities |
+| `request_reload` | Request reload of epoch data. | create | training |
+| `reschedule_workout` | Move a scheduled workout to another date on the Garmin Connect calendar. | change/delete | workouts |
+| `schedule_week` | Schedule a list of workouts for the week in a single call. | create | workouts |
+| `schedule_workout` | Schedule a workout to a specific calendar date. | create | workouts |
+| `schedule_workouts` | Schedule multiple workouts to specific calendar dates. | create | workouts |
+| `search_foods` | Search Garmin's general food catalog (FatSecret + Garmin custom foods). | read | nutrition |
+| `set_activity_description` | Set or update the free-text description (notes) of an activity. | change/delete | activities |
+| `set_activity_event_type` | Set the event type of an activity. | change/delete | activities |
+| `set_activity_exercise_sets` | Replace the exercise sets on a strength (or other rep-counting) activity. | change/delete | activities |
+| `set_activity_feel` | Set how an activity felt ('How did you feel?'). | change/delete | activities |
+| `set_activity_name` | Set or update the name of an activity. | change/delete | activities |
+| `set_activity_type` | Change the activity type (sport) of an activity. | change/delete | activities |
+| `set_blood_pressure` | Set blood pressure values. | create | health |
+| `set_fit_download_dir` | Set and persist the default directory for downloaded activity files. | create | activities |
+| `set_heart_rate_zones` | Set an account-level heart-rate training-zone configuration for one sport. | change/delete | – |
+| `set_nutrition_daily_settings` | Update daily nutrition goals (calorie target and macronutrient targets). | change/delete | nutrition |
+| `set_perceived_effort` | Set the perceived effort (RPE) for an activity. | change/delete | activities |
+| `unschedule_workout` | Remove a scheduled workout from the Garmin Connect calendar. | change/delete | workouts |
+| `unschedule_workouts` | Remove multiple scheduled workouts from the Garmin Connect calendar. | change/delete | workouts |
+| `update_custom_food` | Update an existing custom food in the user's Garmin nutrition library. | change/delete | nutrition |
+| `upload_course` | Upload a GPX file as a Garmin Connect Course. | create | activities |
+| `upload_workout` | Upload a workout from JSON data. | create | workouts |
+| `upload_workouts` | Upload multiple workouts from JSON data in a single call. | create | workouts |
+| `upsert_and_log` | Find-or-create a custom food then log it in one step. | create | nutrition |
+<!-- tools:end -->

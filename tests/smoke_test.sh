@@ -6,11 +6,11 @@ image="$1"
 data=$(mktemp -d)
 echo '{"log_level": "info"}' > "$data/options.json"
 
-docker run -d --name addon-smoke -v "$data:/data" "$image" >/dev/null
-trap 'docker logs addon-smoke || true; docker rm -f addon-smoke >/dev/null 2>&1 || true' EXIT
+docker run -d --name app-smoke -v "$data:/data" "$image" >/dev/null
+trap 'docker logs app-smoke || true; docker rm -f app-smoke >/dev/null 2>&1 || true' EXIT
 
 check() {
-  docker exec addon-smoke python3 -c "$1"
+  docker exec app-smoke python3 -c "$1"
 }
 
 # Wait for the web UI
@@ -31,6 +31,18 @@ tools = urllib.request.urlopen('http://127.0.0.1:8099/tools', timeout=5).read().
 assert tools.count('class=\"tool\"') >= 100, 'tool list too short'
 "
 
+echo "1b. Page in German and English"
+check "
+import urllib.request
+def page(lang, path='/'):
+    req = urllib.request.Request('http://127.0.0.1:8099' + path, headers={'Accept-Language': lang})
+    return urllib.request.urlopen(req, timeout=5).read().decode()
+de, en = page('de-DE,de;q=0.9'), page('en-US')
+assert 'lang=\"de\"' in de and 'Anmelden' in de, 'German page missing'
+assert 'lang=\"en\"' in en and 'Log in' in en, 'English page missing'
+assert 'Aktivitäten' in page('de', '/tools'), 'German tool list missing'
+"
+
 echo "2. Endpoint is protected by the secret path"
 check "
 import urllib.request, urllib.error
@@ -48,15 +60,15 @@ assert code(f'http://127.0.0.1:8100/{secret}/mcp', 'POST') == 503
 "
 
 echo "3. Secret path is never written to the log"
-secret=$(docker exec addon-smoke cat /data/secret_path)
-if docker logs addon-smoke 2>&1 | grep -q "$secret"; then
+secret=$(docker exec app-smoke cat /data/secret_path)
+if docker logs app-smoke 2>&1 | grep -q "$secret"; then
   echo "secret path found in log" >&2
   exit 1
 fi
 
 echo "4. Health check passes"
 for _ in $(seq 1 30); do
-  status=$(docker inspect -f '{{.State.Health.Status}}' addon-smoke)
+  status=$(docker inspect -f '{{.State.Health.Status}}' app-smoke)
   [ "$status" = "healthy" ] && break
   sleep 3
 done
