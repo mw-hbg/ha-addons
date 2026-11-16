@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Start the built add-on image like the Supervisor would (without Home
+# Start the built app image like the Supervisor would (without Home
 # Assistant) and check the basics from inside the container.
 set -euo pipefail
 image="$1"
@@ -43,7 +43,7 @@ assert code('http://127.0.0.1:8100/') == 404
 assert code('http://127.0.0.1:8100/mcp', 'POST') == 404
 assert code('http://127.0.0.1:8100/wrong-secret/mcp', 'POST') == 404
 secret = open('/data/secret_path').read().strip()
-# not logged in -> the add-on answers 503 with a hint instead of the server
+# not logged in -> the app answers 503 with a hint instead of the server
 assert code(f'http://127.0.0.1:8100/{secret}/mcp', 'POST') == 503
 "
 

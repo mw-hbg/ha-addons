@@ -1,13 +1,13 @@
 # Garmin Connect MCP
 
-This add-on runs an [MCP](https://modelcontextprotocol.io) server for your
+This app runs an [MCP](https://modelcontextprotocol.io) server for your
 Garmin Connect account inside Home Assistant. AI assistants that support remote
 MCP servers – Claude, ChatGPT and many others – can then read your training and
 health data and, if you allow it, create workouts and schedule them on your
 watch.
 
 > **Unofficial.** This project is not affiliated with or endorsed by Garmin.
-> Garmin offers no public API for individuals, so the add-on uses the same
+> Garmin offers no public API for individuals, so the app uses the same
 > private endpoints as the Garmin Connect website (via
 > [python-garminconnect](https://github.com/cyberjunky/python-garminconnect)).
 > Garmin may change or block this at any time. Use at your own risk.
@@ -15,40 +15,40 @@ watch.
 ## How it works
 
 ```
-AI assistant ──HTTPS──► your Home Assistant address ──► /api/webhook/<secret id> ──► add-on ──► Garmin Connect
+AI assistant ──HTTPS──► your Home Assistant address ──► /api/webhook/<secret id> ──► app ──► Garmin Connect
                         (Nabu Casa, Cloudflare Tunnel,   (helper integration)
                          reverse proxy …)
 ```
 
-* By default the add-on is reached through the address you already use to
+* By default the app is reached through the address you already use to
   access Home Assistant from outside – **no extra hostname, tunnel or port
   forwarding**. A small helper integration (`garmin_mcp_webhook`), installed by
-  the add-on, provides a Home Assistant webhook with a long random id and
-  forwards requests to the add-on.
+  the app, provides a Home Assistant webhook with a long random id and
+  forwards requests to the app.
 * Alternatively (`remote_access: direct`) you route your own HTTPS hostname to
-  the add-on's port 8100.
+  the app's port 8100.
 * The MCP server itself listens on loopback only. An nginx in front of it only
   forwards requests that carry a long random **secret path**; everything else
   gets a `404`.
-* The add-on page (sidebar → **Garmin MCP**) is only reachable through Home
+* The app page (sidebar → **Garmin MCP**) is only reachable through Home
   Assistant and only for administrators.
 * Your Garmin password is never stored. After logging in, only the OAuth tokens
-  Garmin issues are kept in the add-on's private storage (valid for about six
+  Garmin issues are kept in the app's private storage (valid for about six
   months).
-* **Log out and delete tokens** removes the tokens from the add-on. Garmin
+* **Log out and delete tokens** removes the tokens from the app. Garmin
   itself is not notified, so tokens that might have been copied elsewhere stay
   valid until they expire. To revoke them everywhere, change your Garmin
   password.
 
 ## Setup
 
-Requires Home Assistant **2026.2** or newer (OS or Supervised). Since 2026.2 Home Assistant calls add-ons *apps*; both words mean the same here. The add-on is
+Requires Home Assistant **2026.2** or newer (OS or Supervised). Apps were called *add-ons* before Home Assistant 2026.2. The app is
 marked *experimental* until version 1.0.
 
 ### 1. Install and start
 
-Install the add-on, start it and open **Garmin MCP** in the sidebar
-(or **Open Web UI** on the add-on page).
+Install the app, start it and open **Garmin MCP** in the sidebar
+(or **Open Web UI** on the app page).
 
 ### 2. Log in to Garmin Connect
 
@@ -56,7 +56,7 @@ Enter your Garmin e-mail and password. If two-factor authentication is enabled,
 Garmin sends you a code – enter it on the next screen.
 
 **Two-factor authentication** is supported. If it is enabled for your Garmin
-account, Garmin sends you a code (app, e-mail or SMS) and the add-on asks for
+account, Garmin sends you a code (app, e-mail or SMS) and the app asks for
 it on the next screen. You only need it at login – not for every request.
 After about six months the tokens expire; then simply log in again.
 
@@ -69,25 +69,25 @@ usually already the case. Without it, writing fails with HTTP 412.
 
 ### 3. Restart Home Assistant once
 
-On first start the add-on installs its helper integration. The add-on page
+On first start the app installs its helper integration. The app page
 then shows **“Home Assistant must be restarted once”** with a button to do so
 (a notification appears as well). After the restart the status changes to
-**Active** – nothing else to set up. When a later add-on update brings a new
+**Active** – nothing else to set up. When a later app update brings a new
 version of the helper integration, Home Assistant shows a **repair notice**
 (*Settings → Repairs*) with a button to restart, just like HACS does.
 
 Requirement: Home Assistant must already be reachable from the internet over
-HTTPS (Nabu Casa, Cloudflare Tunnel, reverse proxy, …). The add-on uses the
+HTTPS (Nabu Casa, Cloudflare Tunnel, reverse proxy, …). The app uses the
 external URL from *Settings → System → Network* (or your Nabu Casa address).
-If it cannot work it out, enter it as **Public base URL** in the add-on
+If it cannot work it out, enter it as **Public base URL** in the app
 configuration.
 
 <details>
 <summary>Alternative: own hostname (<code>remote_access: direct</code>)</summary>
 
 Set `remote_access: direct`, then route a public **HTTPS** hostname to the
-target address shown on the add-on page (e.g. with `additional_hosts` in the
-Cloudflared add-on):
+target address shown on the app page (e.g. with `additional_hosts` in the
+Cloudflared app):
 
 ```yaml
 additional_hosts:
@@ -98,7 +98,7 @@ additional_hosts:
 Enter that hostname as **Public base URL**. Never forward port 8100 on your
 router without HTTPS.
 
-Best set `direct` before the first start. If you switch later, the add-on
+Best set `direct` before the first start. If you switch later, the app
 removes its helper integration from Home Assistant by itself on the next start
 (no restart needed). Switching back to `webhook` installs it again and asks for
 one restart. The connector URL changes when you switch.
@@ -106,7 +106,7 @@ one restart. The connector URL changes when you switch.
 
 ### 4. Connect your AI assistant
 
-Copy the **Connector URL** from the add-on page. It looks like
+Copy the **Connector URL** from the app page. It looks like
 `https://home.example.com/api/webhook/garmin_mcp_<secret>` (or
 `https://garmin.example.com/<secret>/mcp` in direct mode).
 
@@ -117,17 +117,17 @@ Copy the **Connector URL** from the add-on page. It looks like
   MCP server using the *Streamable HTTP* transport and the URL.
 
 > **Using ha-mcp as well?** If the [ha-mcp](https://github.com/homeassistant-ai/ha-mcp)
-> add-on with its webhook proxy (OAuth) runs on the same Home Assistant, your
+> app with its webhook proxy (OAuth) runs on the same Home Assistant, your
 > AI app may ask you to log in to your Home Assistant and grant access when
 > you add this connector. That prompt comes from ha-mcp's sign-in for your
-> domain and is harmless – confirm it. This add-on itself needs no sign-in.
+> domain and is harmless – confirm it. This app itself needs no sign-in.
 
 ## Security
 
 * **Treat the connector URL like a password.** Anyone who knows it can use your
   Garmin account through the enabled tools. Don't share screenshots or logs that
-  contain it. If it leaks, click **Generate new secret URL** on the add-on page.
-* **What the add-on may access in Home Assistant:** it writes only the helper
+  contain it. If it leaks, click **Generate new secret URL** on the app page.
+* **What the app may access in Home Assistant:** it writes only the helper
   integration (`custom_components/garmin_mcp_webhook`) and its settings file
   (`.garmin_mcp_webhook.json`) into the configuration folder, and uses the
   Home Assistant API only to set up that integration, to show the restart
@@ -144,11 +144,11 @@ Copy the **Connector URL** from the add-on page. It looks like
 
 ## Connection test
 
-The **Test connection** button on the add-on page checks, one after another:
+The **Test connection** button on the app page checks, one after another:
 
 1. the MCP server answers (and how many tools it offers),
 2. your Garmin account can be reached with the saved login,
-3. the connector URL works **from the internet** – the add-on calls its own
+3. the connector URL works **from the internet** – the app calls its own
    public address, exactly the way your AI app does.
 
 Each failed check comes with a hint what to do.
@@ -156,14 +156,14 @@ Each failed check comes with a hint what to do.
 ## Notifications
 
 * **Restart required** – after installing, and after updates of the helper
-  integration (banner on the add-on page, notification, repair notice).
+  integration (banner on the app page, notification, repair notice).
 * **Garmin login no longer valid** – e.g. when the tokens expired after about
   six months or were revoked. Home Assistant shows a notification; log in again
-  on the add-on page. The AI app also gets a clear message instead of an error.
+  on the app page. The AI app also gets a clear message instead of an error.
 
 ## Choosing tools
 
-The add-on page shows, per category, what the AI may do. **Choose tools** opens
+The app page shows, per category, what the AI may do. **Choose tools** opens
 a list of all tools grouped by category, with a search field, presets
 (*read only*, *create, never delete*, *everything*, *nothing*), a checkbox per
 tool and an **i** button explaining what each tool does and what kind of access
@@ -173,7 +173,7 @@ A saved selection replaces `tool_areas`, `write_access`, `enable_tools` and
 `disable_tools` from the configuration.
 
 **After updates:** tools that a new version brings are **switched off** in a
-saved selection. The add-on page and the tool list point them out (marked
+saved selection. The app page and the tool list point them out (marked
 “new”) so you can decide. Tools the server does not classify are always
 treated as *change/delete* – they are never enabled by `read_only` or
 `create_only`. **Reset to configuration** on that page
@@ -226,21 +226,21 @@ changes an existing activity and therefore needs `enable_tools` with `create_onl
 
 | Problem | Solution |
 |---|---|
-| Status *Garmin login failed* | Tokens expired or were revoked. Log out on the add-on page and log in again. |
+| Status *Garmin login failed* | Tokens expired or were revoked. Log out on the app page and log in again. |
 | *Too many requests* during login | Garmin rate-limits logins. Wait a few minutes. |
 | Writing workouts fails with HTTP 412 | Upload consent missing: Garmin Connect → Settings → Privacy settings → Data → *Upload device data*. |
 | Asked for a code at login | Two-factor authentication is enabled – enter the code Garmin sent you. |
 | AI app asks to log in to Home Assistant when adding the connector | Comes from ha-mcp (if installed), see step 4. Confirm it. |
-| Status stays *Home Assistant must be restarted once* | Restart Home Assistant (button on the add-on page or *Settings → System → Restart*). |
+| Status stays *Home Assistant must be restarted once* | Restart Home Assistant (button on the app page or *Settings → System → Restart*). |
 | Connector shows *couldn't reach the server* | Check that Home Assistant is reachable from outside, that the URL contains the current secret, and any firewall/WAF rules. |
 | The AI says the tool does not exist | It is disabled by `tool_areas`, `write_access` or `disable_tools`. |
 
 ## Uninstalling
 
-Tip: set **Remote access** to `direct` and restart the add-on once before
+Tip: set **Remote access** to `direct` and restart the app once before
 uninstalling – it then removes its helper integration by itself.
 
-Otherwise uninstalling the add-on leaves the helper integration in place (it
+Otherwise uninstalling the app leaves the helper integration in place (it
 then just answers `502`). To remove it by hand: *Settings → Devices & services →
 Garmin Connect MCP (remote access) → Delete*, then delete the folder
 `custom_components/garmin_mcp_webhook` and the file `.garmin_mcp_webhook.json`

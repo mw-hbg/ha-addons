@@ -1,4 +1,4 @@
-"""Tests for the add-on launcher: tool protection, selection, texts, secrets, clean-up."""
+"""Tests for the app launcher: tool protection, selection, texts, secrets, clean-up."""
 
 import json
 

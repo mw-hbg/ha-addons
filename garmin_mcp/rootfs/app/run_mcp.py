@@ -1,11 +1,11 @@
-"""Start the upstream garmin-mcp server with add-on specific adjustments.
+"""Start the upstream garmin-mcp server with app specific adjustments.
 
-* Error hints refer to the add-on page instead of the `garmin-mcp-auth`
-  command line tool, which does not exist for add-on users. These texts reach
+* Error hints refer to the app page instead of the `garmin-mcp-auth`
+  command line tool, which does not exist for app users. These texts reach
   the AI assistant, which passes them on to the user.
-* The server's own log level follows the add-on option (GARMIN_ADDON_LOG_LEVEL),
+* The server's own log level follows the app option (GARMIN_ADDON_LOG_LEVEL),
   so per-request lines like "POST /mcp 200" only appear with log_level: debug.
-* File paths given to tools are confined to the add-on's download folder.
+* File paths given to tools are confined to the app's download folder.
   Without this, a tool call could read any file in the container (e.g.
   upload_course(gpx_path=...)) or write into the mapped Home Assistant config
   folder (download_activity_file(output_dir=...)) – including the public
@@ -23,8 +23,8 @@ import garmin_mcp
 from garminconnect import GarminConnectAuthenticationError
 
 RELOGIN_HINT = (
-    "The Garmin Connect login of the Home Assistant add-on 'Garmin Connect MCP' is no "
-    "longer valid. Ask the user to open the add-on page in Home Assistant (sidebar: "
+    "The Garmin Connect login of the Home Assistant app 'Garmin Connect MCP' is no "
+    "longer valid. Ask the user to open the app page in Home Assistant (sidebar: "
     "Garmin MCP) and log in to Garmin Connect again."
 )
 
@@ -90,7 +90,7 @@ def confine_paths(fn):
                 return json.dumps(
                     {
                         "error": (
-                            f"'{name}' must be inside the add-on's download folder {SANDBOX}. "
+                            f"'{name}' must be inside the app's download folder {SANDBOX}. "
                             "Other locations are blocked for security reasons."
                         )
                     }

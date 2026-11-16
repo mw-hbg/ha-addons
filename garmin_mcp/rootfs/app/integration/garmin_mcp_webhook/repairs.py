@@ -1,4 +1,4 @@
-"""Repair flow: restart Home Assistant after the add-on updated this integration."""
+"""Repair flow: restart Home Assistant after the app updated this integration."""
 
 from __future__ import annotations
 

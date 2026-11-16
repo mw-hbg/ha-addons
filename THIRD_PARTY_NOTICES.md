@@ -1,6 +1,6 @@
 # Third-party notices
 
-The add-on image bundles the following software. Each package's full license
+The app image bundles the following software. Each package's full license
 text ships inside the image together with the package (Python packages in their
 `*.dist-info` folders, Debian packages under `/usr/share/doc`).
 
@@ -11,8 +11,8 @@ text ships inside the image together with the package (Python packages in their
 | [MCP Python SDK](https://github.com/modelcontextprotocol/python-sdk) | MCP protocol implementation | MIT | © Anthropic, PBC and contributors |
 | [curl_cffi](https://github.com/lexiforest/curl_cffi) | HTTP client used by python-garminconnect | MIT | © curl_cffi contributors |
 | [fitparse](https://github.com/dtcooper/python-fitparse) | FIT file parsing | MIT | © David Cooper and contributors |
-| [Starlette](https://github.com/encode/starlette) | Add-on web UI | BSD-3-Clause | © Encode OSS Ltd. |
-| [Uvicorn](https://github.com/encode/uvicorn) | Add-on web UI server | BSD-3-Clause | © Encode OSS Ltd. |
+| [Starlette](https://github.com/encode/starlette) | App web UI | BSD-3-Clause | © Encode OSS Ltd. |
+| [Uvicorn](https://github.com/encode/uvicorn) | App web UI server | BSD-3-Clause | © Encode OSS Ltd. |
 | [python-multipart](https://github.com/Kludex/python-multipart) | Form parsing in the web UI | Apache-2.0 | © Andrew Dunham and contributors |
 | [ha-mcp webhook proxy](https://github.com/homeassistant-ai/ha-mcp) | Design of the webhook remote access (re-implemented, no code copied verbatim) | MIT | © 2024 Julien and contributors |
 | [nginx](https://nginx.org) | Secret-path reverse proxy | BSD-2-Clause | © Igor Sysoev, Nginx, Inc. |

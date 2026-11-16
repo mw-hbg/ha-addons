@@ -1,7 +1,7 @@
 name: Check for a new Garmin server version
 
 # Once a week: is there a newer commit of Taxuspt/garmin_mcp than the one the
-# add-on is pinned to? If so, open (or update) an issue. Updating stays a
+# app is pinned to? If so, open (or update) an issue. Updating stays a
 # deliberate step: bump UPSTREAM_REF in garmin_mcp/Dockerfile, let the tests
 # run, then release.
 on:

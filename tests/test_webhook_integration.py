@@ -1,4 +1,4 @@
-"""Tests for the helper integration that forwards the HA webhook to the add-on."""
+"""Tests for the helper integration that forwards the HA webhook to the app."""
 
 import asyncio
 import json

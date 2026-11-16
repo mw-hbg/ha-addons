@@ -1,4 +1,4 @@
-# Garmin Connect MCP – Home Assistant add-on
+# Garmin Connect MCP – Home Assistant app
 
 [🇩🇪 Deutsche Version](README.de.md)
 
@@ -6,7 +6,7 @@ Let AI assistants such as **Claude** or **ChatGPT** read your Garmin Connect
 training and health data – runs, splits, sleep, HRV, Body Battery, training
 load – and create structured workouts that sync to your watch.
 
-The add-on runs an [MCP](https://modelcontextprotocol.io) server inside your
+The app runs an [MCP](https://modelcontextprotocol.io) server inside your
 Home Assistant, so your data goes straight from Garmin to your AI assistant
 without any third-party service in between.
 
@@ -36,16 +36,16 @@ without any third-party service in between.
 
 [![Add repository to Home Assistant](https://my.home-assistant.io/badges/supervisor_add_addon_repository.svg)](https://my.home-assistant.io/redirect/supervisor_add_addon_repository/?repository_url=https%3A%2F%2Fgithub.com%2Fmw-hbg%2Fha-addons)
 
-1. *Settings → Add-ons → Add-on Store → ⋮ → Repositories*, add
+1. *Settings → Apps → Store → ⋮ → Repositories*, add
    `https://github.com/mw-hbg/ha-addons`.
 2. Install **Garmin Connect MCP** and start it.
 3. Open **Garmin MCP** in the sidebar, log in to Garmin Connect.
-4. Restart Home Assistant once when the add-on page asks for it.
-5. Add the connector URL shown on the add-on page to your AI assistant.
+4. Restart Home Assistant once when the app page asks for it.
+5. Add the connector URL shown on the app page to your AI assistant.
 
 Good to know:
 
-* **Two-factor authentication** on your Garmin account is supported – the add-on
+* **Two-factor authentication** on your Garmin account is supported – the app
   asks for the code during login.
 * **Workouts on your watch (EU accounts):** Garmin needs your consent to data
   uploads: Garmin Connect → *Settings → Privacy settings → Data → Upload device
@@ -54,24 +54,24 @@ Good to know:
   when adding the connector. That comes from ha-mcp and is harmless.
 
 Full instructions: [DOCS.md](DOCS.md) (also shown in the
-add-on's *Documentation* tab).
+app's *Documentation* tab).
 
-## Why does the add-on install an integration?
+## Why does the app install an integration?
 
 AI assistants call MCP servers **from the internet**. From outside, usually only
 Home Assistant itself is reachable (via Nabu Casa, Cloudflare Tunnel or a
-reverse proxy) – not the add-ons, which run in their own containers. And only
+reverse proxy) – not the apps, which run in their own containers. And only
 code running *inside* Home Assistant can add an address there.
 
-So on first start the add-on installs a tiny helper integration
+So on first start the app installs a tiny helper integration
 (`custom_components/garmin_mcp_webhook`). It registers a Home Assistant
 **webhook** with a long random id (`/api/webhook/garmin_mcp_…`) and passes each
-request on, unchanged, to the add-on inside your network. It stores nothing,
+request on, unchanged, to the app inside your network. It stores nothing,
 reads nothing else and logs nothing but errors.
 
 * Benefit: no extra hostname, tunnel or port forwarding.
 * Cost: one Home Assistant restart after installing (and after updates of the
-  helper). The add-on page and a repair notice tell you when.
+  helper). The app page and a repair notice tell you when.
 
 ## Remote access: webhook or direct
 
@@ -88,21 +88,21 @@ or you want to secure Garmin access separately from Home Assistant.
 
 **Setting up `direct`** – best before the first start:
 
-1. Install the add-on, but don't start it yet.
+1. Install the app, but don't start it yet.
 2. *Configuration* tab: **Remote access** = `direct`, **Public base URL** =
    your hostname (e.g. `https://garmin.example.com`). Save.
-3. Start the add-on. It installs nothing in Home Assistant.
-4. The add-on page shows a *target for your tunnel / reverse proxy*
+3. Start the app. It installs nothing in Home Assistant.
+4. The app page shows a *target for your tunnel / reverse proxy*
    (e.g. `http://abcd1234-garmin-mcp:8100`). Route your hostname there
-   (Cloudflared add-on: `additional_hosts`).
-5. Use the connector URL shown on the add-on page.
+   (Cloudflared app: `additional_hosts`).
+5. Use the connector URL shown on the app page.
 
 **Switching later** is fine too:
 
-* `webhook` → `direct`: on the next start the add-on removes its helper
+* `webhook` → `direct`: on the next start the app removes its helper
   integration from Home Assistant by itself (no restart needed). Then continue
   with steps 4–5.
-* `direct` → `webhook`: on the next start the add-on installs the helper again
+* `direct` → `webhook`: on the next start the app installs the helper again
   and asks for one Home Assistant restart.
 
 The connector URL changes when you switch – update it in your AI app.
@@ -118,7 +118,7 @@ The connector URL changes when you switch – update it in your AI app.
 
 * **Local testing:** copy the `garmin_mcp` folder to `/addons/` on your Home
   Assistant host, remove the `image:` line from `config.yaml` and install it
-  from *Local add-ons* – Home Assistant then builds the image itself.
+  from *Local apps* – Home Assistant then builds the image itself.
 * **Tests:** `pytest tests` (unit tests for the launcher and the helper
   integration); every push also builds both images and runs a smoke test of
   the container (`tests/smoke_test.sh`).
@@ -137,6 +137,6 @@ The connector URL changes when you switch – update it in your AI app.
 * MCP server: [Taxuspt/garmin_mcp](https://github.com/Taxuspt/garmin_mcp) (MIT)
 * Garmin client: [cyberjunky/python-garminconnect](https://github.com/cyberjunky/python-garminconnect) (MIT)
 
-This add-on is released under the [MIT License](../LICENSE). It is provided free of
+This app is released under the [MIT License](../LICENSE). It is provided free of
 charge and without warranty. See [THIRD_PARTY_NOTICES.md](../THIRD_PARTY_NOTICES.md)
 for the licenses of bundled software.

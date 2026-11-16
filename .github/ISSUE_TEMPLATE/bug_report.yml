@@ -10,7 +10,7 @@ body:
   - type: input
     id: addon_version
     attributes:
-      label: Add-on version
+      label: App version
       placeholder: "0.3.0"
     validations:
       required: true
@@ -45,10 +45,10 @@ body:
   - type: textarea
     id: test
     attributes:
-      label: Result of "Test connection" on the add-on page
+      label: Result of "Test connection" on the app page
   - type: textarea
     id: log
     attributes:
-      label: Add-on log (Log tab)
+      label: App log (Log tab)
       description: Check that it contains no personal data before posting.
       render: text

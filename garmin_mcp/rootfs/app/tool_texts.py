@@ -180,7 +180,7 @@ DE = {
     "get_activity_fit_messages": "Originale FIT-Datei einer Aktivität auslesen.",
     "get_activity_fit_data": "Detaildaten (z. B. Radsensoren) aus der FIT-Datei auslesen.",
     "get_power_duration_curve": "Leistungskurve (Bestwerte) über die letzten Aktivitäten abrufen.",
-    "download_activity_file": "Aktivität als Datei herunterladen (im Add-on gespeichert).",
+    "download_activity_file": "Aktivität als Datei herunterladen (in der App gespeichert).",
     "set_fit_download_dir": "Speicherort für heruntergeladene Dateien festlegen.",
     "get_calendar_events": "Wettkämpfe und Veranstaltungen im Kalender abrufen.",
 }

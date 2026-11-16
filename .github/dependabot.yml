@@ -5,7 +5,7 @@ updates:
     directory: /
     schedule:
       interval: monthly
-  # Python base image of the add-on
+  # Python base image of the app
   - package-ecosystem: docker
     directory: /garmin_mcp
     schedule:

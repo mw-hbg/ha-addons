@@ -1,13 +1,13 @@
-"""Remote access for the Garmin Connect MCP add-on via a Home Assistant webhook.
+"""Remote access for the Garmin Connect MCP app via a Home Assistant webhook.
 
-The add-on writes /config/.garmin_mcp_webhook.json with a random webhook id
-and the add-on's internal MCP address. This integration registers that
-webhook, so MCP clients can reach the add-on through Home Assistant's existing
+The app writes /config/.garmin_mcp_webhook.json with a random webhook id
+and the app's internal MCP address. This integration registers that
+webhook, so MCP clients can reach the app through Home Assistant's existing
 external address (Nabu Casa, Cloudflare Tunnel, reverse proxy, …):
 
     https://<your-home-assistant>/api/webhook/<webhook id>
 
-Requests are forwarded unchanged to the add-on; responses (JSON or
+Requests are forwarded unchanged to the app; responses (JSON or
 Server-Sent Events) are streamed back. Nothing is stored and nothing is logged
 except errors – the webhook id is never written to the log.
 """
@@ -36,7 +36,7 @@ from .const import CONFIG_FILE, DOMAIN
 
 _LOGGER = logging.getLogger(__name__)
 
-# Request headers that must not be forwarded to the add-on.
+# Request headers that must not be forwarded to the app.
 _DROP_REQUEST_HEADERS = {
     "host",
     "content-length",
@@ -75,8 +75,8 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     config = await hass.async_add_executor_job(_read_config)
     if not config or not config.get("webhook_id") or not config.get("target_url"):
         raise ConfigEntryNotReady(
-            "Garmin Connect MCP add-on has not written its configuration yet – "
-            "start the add-on"
+            "Garmin Connect MCP app has not written its configuration yet – "
+            "start the app"
         )
 
     webhook_id: str = config["webhook_id"]
@@ -102,7 +102,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         "webhook_id": webhook_id,
         "session": session,
     }
-    # The add-on replaces these files when it brings a newer version. Python
+    # The app replaces these files when it brings a newer version. Python
     # only loads the new code after a restart, so raise a fixable repair
     # issue (with a restart button) as soon as the files on disk change.
     loaded_version = await hass.async_add_executor_job(_manifest_version)
@@ -176,8 +176,8 @@ async def _forward(
                 status=upstream.status, body=await upstream.read(), headers=resp_headers
             )
     except aiohttp.ClientError as err:
-        _LOGGER.warning("Garmin Connect MCP add-on not reachable: %s", type(err).__name__)
+        _LOGGER.warning("Garmin Connect MCP app not reachable: %s", type(err).__name__)
         return web.json_response(
-            {"error": "Garmin Connect MCP add-on is not reachable. Is it running?"},
+            {"error": "Garmin Connect MCP app is not reachable. Is it running?"},
             status=502,
         )

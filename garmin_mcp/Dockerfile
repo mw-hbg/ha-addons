@@ -1,4 +1,4 @@
-# Garmin Connect MCP – Home Assistant add-on
+# Garmin Connect MCP – Home Assistant app
 # Debian-based Python image: garminconnect needs curl_cffi, which ships
 # glibc wheels for amd64 and arm64.
 FROM python:3.12-slim
@@ -39,7 +39,7 @@ LABEL \
     org.opencontainers.image.source="https://github.com/mw-hbg/ha-addons" \
     org.opencontainers.image.licenses="MIT"
 
-# Health check: the Supervisor restarts the add-on when the web UI stops answering
+# Health check: the Supervisor restarts the app when the web UI stops answering
 HEALTHCHECK --interval=30s --timeout=5s --start-period=40s --retries=3 \
     CMD python3 -c "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8099/status.json', timeout=4)" || exit 1
 

@@ -12,7 +12,7 @@
         "step": {
           "confirm": {
             "title": "Home Assistant neu starten",
-            "description": "Das Add-on Garmin Connect MCP hat seine Hilfs-Integration auf Version {version} aktualisiert. Home Assistant muss einmal neu gestartet werden, um sie zu laden. Mit „Absenden“ startest du jetzt neu."
+            "description": "Die App Garmin Connect MCP hat ihre Hilfs-Integration auf Version {version} aktualisiert. Home Assistant muss einmal neu gestartet werden, um sie zu laden. Mit „Absenden“ startest du jetzt neu."
           }
         }
       }

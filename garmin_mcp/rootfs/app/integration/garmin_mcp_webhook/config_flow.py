@@ -1,8 +1,8 @@
 """Config flow for the Garmin Connect MCP remote-access webhook.
 
-The entry is normally created automatically by the Garmin Connect MCP add-on.
+The entry is normally created automatically by the Garmin Connect MCP app.
 Adding it by hand via Settings → Devices & services works too; it has no
-options – everything comes from the add-on.
+options – everything comes from the app.
 """
 
 from __future__ import annotations

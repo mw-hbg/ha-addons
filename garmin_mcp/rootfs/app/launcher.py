@@ -1,6 +1,6 @@
-"""Garmin Connect MCP – Home Assistant add-on launcher.
+"""Garmin Connect MCP – Home Assistant app launcher.
 
-Runs three things inside the add-on container:
+Runs three things inside the app container:
 
 * the upstream garmin-mcp server (streamable HTTP, loopback only),
 * nginx in front of it, which only forwards requests that carry the secret
@@ -153,7 +153,7 @@ _UNCLASSIFIED = sorted(n for n in ALL_TOOLS if n not in READ_ONLY_TOOLS | ADDITI
 
 def load_selection() -> tuple[set[str], set[str]] | None:
     """(picked tools, tools that existed when the user saved) or None if the
-    user never saved a selection on the add-on page."""
+    user never saved a selection on the app page."""
     try:
         data = json.loads(SELECTION_FILE.read_text())
     except (FileNotFoundError, ValueError):
@@ -1399,7 +1399,7 @@ function copyVal(id,btn){navigator.clipboard.writeText(document.getElementById(i
 
 
 def _config_url() -> str:
-    """Link to this add-on's configuration tab in the Home Assistant UI."""
+    """Link to this app's configuration tab in the Home Assistant UI."""
     slug = socket.gethostname().replace("-", "_")
     return f"/config/app/{slug}/config"
 

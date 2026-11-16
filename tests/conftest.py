@@ -1,4 +1,4 @@
-"""Test setup: point the launcher at temporary folders and make the add-on
+"""Test setup: point the launcher at temporary folders and make the app
 code and a minimal Home Assistant stub importable."""
 
 import os

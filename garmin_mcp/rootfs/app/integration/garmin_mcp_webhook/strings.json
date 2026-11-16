@@ -12,7 +12,7 @@
         "step": {
           "confirm": {
             "title": "Restart Home Assistant",
-            "description": "The Garmin Connect MCP add-on has updated its helper integration to version {version}. Home Assistant must be restarted once to load it. Click Submit to restart now."
+            "description": "The Garmin Connect MCP app has updated its helper integration to version {version}. Home Assistant must be restarted once to load it. Click Submit to restart now."
           }
         }
       }

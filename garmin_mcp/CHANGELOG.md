@@ -2,42 +2,45 @@
 
 ## Unreleased
 
+**After updating:** restart Home Assistant once (the app page and a repair notice ask for it)
+and generate a new secret URL on the app page (**New URL**), then replace it in your AI app.
+
+Security
+- File tools (`upload_course`, `download_course_gpx`, `download_activity_file`,
+  `set_fit_download_dir`) can only read and write inside the app's download folder. Before,
+  an AI could upload any readable file (e.g. from the Home Assistant config folder) as a
+  course or write files into it.
+- The MCP server no longer receives the Home Assistant Supervisor token or any other secret.
+- nginx could write the secret path to the app log when the server was briefly unreachable
+  (e.g. during a restart). nginx now only logs critical errors.
+- Files with secrets (secret URL, webhook ID, Garmin account, tool selection) are written
+  atomically and are readable only by the app.
+- At most 5 login attempts per 15 minutes; a half-finished 2FA login expires.
+- The app page is never cached, sends no referrer and can only be embedded by Home Assistant.
+
+Stability
+- If the Garmin login fails temporarily (e.g. no internet after a power cut, Garmin down),
+  the app retries by itself with growing pauses; the notification only appears if it keeps failing.
+- All Python dependencies are pinned, so every build produces the same app.
+
 Configuration
-- Every option now explains each value in the Home Assistant UI (German and English), e.g.
-  which tools each area contains.
-- New option `keep_downloads_days` (default 7): downloaded FIT/GPX files are deleted after
-  that many days. Downloads are no longer part of Home Assistant backups.
+- Every option explains each value in the Home Assistant UI (English and German), e.g. which
+  tools each area contains.
+- New option `keep_downloads_days` (default 7): downloaded FIT/GPX files are deleted after that
+  many days. Downloads are no longer part of Home Assistant backups.
 - New option `login_notification` (default on) to switch off the notification about login problems.
 - `public_url` accepts a copied browser address (only scheme and host are used); the app page
   warns if it is invalid or uses `http://`.
 - Typos in `enable_tools` / `disable_tools` are shown as a warning on the app page.
 - Area `workouts` now includes `push_workout_to_device` and `reschedule_workout` (still subject
-  to `write_access`) – previously workouts could not be sent to the watch without `enable_tools`.
-- Texts use the current Home Assistant term "app" instead of "add-on".
-- Security: the app page is never cached, sends no referrer and can only be embedded by Home Assistant.
+  to `write_access`) – before, workouts could not be sent to the watch without `enable_tools`.
 
-- Security: nginx could write the secret path to the add-on log when the server was not
-  reachable for a moment (e.g. during a restart). nginx now only logs critical errors.
-  If you shared your add-on log, generate a new secret URL.
-- Security: file tools (`upload_course`, `download_course_gpx`, `download_activity_file`,
-  `set_fit_download_dir`) can only read and write inside the add-on's download folder.
-  Before, an AI could upload any readable file (e.g. from the Home Assistant config folder)
-  as a course or write files into it.
-- Security: the MCP server no longer receives the Home Assistant Supervisor token or any
-  other secret from the environment.
-- Security: files with secrets (secret URL, webhook ID, Garmin account, tool selection) are
-  written atomically and readable only by the add-on.
-- Security: at most 5 login attempts per 15 minutes; a half-finished 2FA login expires.
-- Stability: if the Garmin login fails temporarily (e.g. Garmin down), the server retries
-  automatically with growing pauses; the notification only appears if it keeps failing.
-- Stability: all Python dependencies are pinned, so a rebuild produces the same image.
-
-- Automated tests for every change: unit tests (tool protection, selection, texts, helper
-  integration) and a smoke test of the built image.
-- New release process: images are published before the version number changes, so Home
-  Assistant never offers an update whose image is not available yet.
-- Weekly check for new versions of the Garmin server; Dependabot keeps build tools up to date.
-- SECURITY.md and issue templates.
+Other
+- Called an "app" everywhere, like in Home Assistant since 2026.2. The helper integration was
+  updated for this (version 0.2.2), hence the one-time restart.
+- Automated tests for every change and a test run of the built app; new release process that
+  publishes the app before Home Assistant offers the update; weekly check for new versions of
+  the Garmin server; SECURITY.md and issue templates.
 
 ## 0.3.0
 
