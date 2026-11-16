@@ -57,6 +57,27 @@ Gut zu wissen:
 Ausführliche Anleitung (Englisch): [DOCS.md](DOCS.md),
 auch im Tab *Dokumentation* des Add-ons.
 
+## Warum installiert das Add-on eine Integration?
+
+KI-Assistenten rufen MCP-Server **aus dem Internet** auf. Von außen ist meist
+nur Home Assistant selbst erreichbar (über Nabu Casa, Cloudflare-Tunnel oder
+Reverse Proxy), nicht aber die Add-ons, die in eigenen Containern laufen. Und
+nur Code, der *in* Home Assistant läuft, kann dort eine Adresse anlegen.
+
+Deshalb legt das Add-on beim ersten Start eine winzige Hilfs-Integration an
+(`custom_components/garmin_mcp_webhook`). Sie richtet einen Home-Assistant-
+**Webhook** mit einer langen Zufalls-ID ein (`/api/webhook/garmin_mcp_…`) und
+reicht jede Anfrage unverändert an das Add-on in deinem Netz weiter. Sie
+speichert nichts, liest sonst nichts und protokolliert nur Fehler.
+
+* Vorteil: kein zusätzlicher Hostname, Tunnel oder Portfreigabe.
+* Preis: ein Neustart von Home Assistant nach der Installation (und nach
+  Updates der Hilfs-Integration). Add-on-Seite und Reparatur-Hinweis sagen dir,
+  wann.
+* Willst du das nicht? `remote_access: direct` einstellen – dann wird nichts
+  installiert und du leitest stattdessen einen eigenen HTTPS-Hostnamen auf das
+  Add-on.
+
 ## Lizenz
 
 MIT-Lizenz, siehe [LICENSE](../LICENSE). Das Add-on wird kostenlos und ohne
