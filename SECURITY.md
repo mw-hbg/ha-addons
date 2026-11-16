@@ -26,3 +26,8 @@ please report those there – and in Garmin's own services.
   tools – treat it like a password and rotate it on the app page if it leaks.
 * Garmin tokens are stored only in the app's private storage (`/data`) and
   are part of Home Assistant backups.
+* The app has no access to the Home Assistant API. Its only access to Home
+  Assistant is the configuration folder, used solely to copy (and in direct
+  mode remove) the helper integration `custom_components/garmin_mcp_webhook`.
+* The internet-facing MCP server runs as an unprivileged user and is confined
+  with Linux Landlock to its own folders (Garmin tokens, downloads, `/tmp`).

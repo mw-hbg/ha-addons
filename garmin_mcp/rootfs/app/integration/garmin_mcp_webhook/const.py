@@ -4,5 +4,8 @@ from pathlib import Path
 
 DOMAIN = "garmin_mcp_webhook"
 TITLE = "Garmin Connect MCP (remote access)"
-# Written by the app: {"webhook_id": "...", "target_url": "http://<app-ip>:8100/<secret>/mcp"}
-CONFIG_FILE = Path("/config/.garmin_mcp_webhook.json")
+# Written by app versions before 0.4; the settings now arrive via discovery.
+LEGACY_CONFIG_FILE = Path("/config/.garmin_mcp_webhook.json")
+
+ISSUE_RESTART = "restart_required"
+ISSUE_LOGIN = "garmin_login"

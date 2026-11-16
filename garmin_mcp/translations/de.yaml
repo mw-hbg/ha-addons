@@ -59,7 +59,7 @@ configuration:
   login_notification:
     name: Hinweis bei Login-Problemen
     description: >-
-      Zeigt eine Benachrichtigung in Home Assistant, wenn die Garmin-Anmeldung nicht mehr
+      Zeigt einen Reparatur-Hinweis in Home Assistant, wenn die Garmin-Anmeldung nicht mehr
       funktioniert (z. B. Passwort geändert) und die App das nicht selbst beheben konnte.
   log_level:
     name: Protokollstufe

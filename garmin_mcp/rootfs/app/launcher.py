@@ -81,7 +81,11 @@ ALLOW_ANY_UI_CLIENT = os.environ.get("ALLOW_ANY_UI_CLIENT") == "1"  # tests only
 HA_CONFIG = Path(os.environ.get("HA_CONFIG_DIR", "/homeassistant"))
 COMPONENT_SRC = Path(__file__).resolve().parent / "integration" / "garmin_mcp_webhook"
 COMPONENT_DST = HA_CONFIG / "custom_components" / "garmin_mcp_webhook"
-WEBHOOK_CONFIG = HA_CONFIG / ".garmin_mcp_webhook.json"
+# Written by app versions before 0.4 – removed on start.
+LEGACY_WEBHOOK_CONFIG = HA_CONFIG / ".garmin_mcp_webhook.json"
+DISCOVERY_FILE = DATA / "discovery_uuid"
+# Integration reports newer than this count as "Home Assistant is connected".
+REPORT_MAX_AGE = 180
 WEBHOOK_ID_FILE = DATA / "webhook_id"
 WEBHOOK_DOMAIN = "garmin_mcp_webhook"
 
@@ -451,6 +455,7 @@ http {{
         location = /{secret}/mcp/ {{
             include /tmp/garmin-mcp-proxy.conf;
         }}
+{report_location}
         location @unavailable {{
             default_type application/json;
             return 503 '{{"error":"Garmin MCP is not ready. Open the Garmin MCP app page in Home Assistant and log in to Garmin Connect."}}';
@@ -491,16 +496,39 @@ class Services:
         self.mcp_env, self.active_tools = tool_selection(self.options)
         self.secret = get_secret()
         self._mcp_failures = 0
-        self._login_alert = False
         self._login_failures = 0
         self._next_login_retry = 0.0
 
     # nginx ---------------------------------------------------------------
+    def _report_location(self) -> str:
+        """Status channel for the helper integration (webhook mode only).
+
+        Reachable only from Home Assistant's internal network (never via the
+        webhook, which forwards /mcp only), and nginx adds the key."""
+        if self.options.get("remote_access", "webhook") != "webhook":
+            return ""
+        return (
+            f"        location = /{self.secret}/ha {{\n"
+            "            allow 172.30.32.0/23;\n"
+            "            deny all;\n"
+            "            limit_except POST { deny all; }\n"
+            f"            proxy_pass http://127.0.0.1:{UI_PORT}/report;\n"
+            f'            proxy_set_header X-Report-Key "{self.secret}";\n'
+            "            proxy_set_header Host 127.0.0.1;\n"
+            "            client_max_body_size 4k;\n"
+            "        }\n"
+        )
+
     def write_nginx_conf(self) -> None:
         write_private(NGINX_PROXY_CONF, NGINX_PROXY.format(mcp_port=MCP_PORT))
         write_private(
             NGINX_CONF,
-            NGINX_TEMPLATE.format(public_port=PUBLIC_PORT, mcp_port=MCP_PORT, secret=self.secret),
+            NGINX_TEMPLATE.format(
+                public_port=PUBLIC_PORT,
+                mcp_port=MCP_PORT,
+                secret=self.secret,
+                report_location=self._report_location(),
+            ),
         )
 
     def start_nginx(self) -> None:
@@ -626,28 +654,17 @@ class Services:
                 pause // 60,
             )
             self.restart_mcp()
-        notify = bool(self.options.get("login_notification", True))
-        if notify and state == "failed" and self._login_failures >= 2 and not self._login_alert:
-            log.warning("Garmin login failed – asking the user to log in again")
-            core_api(
-                "POST",
-                "/services/persistent_notification/create",
-                {
-                    "notification_id": "garmin_mcp_login",
-                    "title": notification_text("notify_login_title"),
-                    "message": notification_text("notify_login"),
-                },
-                quiet=True,
-            )
-            self._login_alert = True
-        elif state == "ready" and self._login_alert:
-            core_api(
-                "POST",
-                "/services/persistent_notification/dismiss",
-                {"notification_id": "garmin_mcp_login"},
-                quiet=True,
-            )
-            self._login_alert = False
+
+    def login_status(self) -> str:
+        """For the helper integration: 'ok', 'failed' (after retries), 'logged_out' or 'starting'."""
+        if not has_tokens():
+            return "logged_out"
+        state = self.mcp_state()
+        if state == "ready":
+            return "ok"
+        if state == "failed" and self._login_failures >= 2:
+            return "failed"
+        return "starting"
 
     def supervise(self) -> None:
         ticks = 0
@@ -660,11 +677,6 @@ class Services:
                     self._check_login()
                 except Exception as exc:  # noqa: BLE001
                     log.debug("Login check failed: %s", exc)
-            if ticks % 120 == 1:  # at start, then every 10 minutes
-                try:
-                    refresh_ha_language()
-                except Exception as exc:  # noqa: BLE001
-                    log.debug("Could not read the Home Assistant language: %s", exc)
             if ticks % 720 == 1:  # at start, then once an hour
                 try:
                     prune_downloads(keep_days(self.options))
@@ -699,21 +711,24 @@ class Services:
 
 
 # --------------------------------------------------------------------------
-# Home Assistant Core API (via Supervisor) and webhook remote access
+# Remote access via the helper integration
+#
+# The app has NO access to the Home Assistant API. It only
+#   * copies the helper integration into custom_components (and removes it in
+#     direct mode),
+#   * announces the integration's settings through the Supervisor's discovery
+#     service – Home Assistant then sets up (and on uninstall removes) the
+#     config entry itself,
+#   * receives a status report from the integration over the internal network
+#     (secret path + key), answering with the Garmin login state.
 # --------------------------------------------------------------------------
-def notification_text(key: str) -> str:
-    """Notifications are shown to everyone, so they use the Home Assistant language.
-    Called from background threads only."""
-    return i18n.ui(i18n.pick(refresh_ha_language()))[key]
-
-
-def core_api(method: str, path: str, data: dict | None = None, quiet: bool = False):
-    """Call the Home Assistant REST API through the Supervisor proxy."""
+def supervisor_api(method: str, path: str, data: dict | None = None):
+    """Call the Supervisor (only /discovery is used). Returns the data or None."""
     token = os.environ.get("SUPERVISOR_TOKEN")
     if not token:
         return None
     req = urllib.request.Request(
-        f"http://supervisor/core/api{path}",
+        f"http://supervisor{path}",
         method=method,
         data=json.dumps(data).encode() if data is not None else None,
         headers={"Authorization": f"Bearer {token}", "Content-Type": "application/json"},
@@ -721,11 +736,11 @@ def core_api(method: str, path: str, data: dict | None = None, quiet: bool = Fal
     try:
         with urllib.request.urlopen(req, timeout=15) as resp:
             raw = resp.read()
-            return json.loads(raw) if raw else {}
+            body = json.loads(raw) if raw else {}
     except Exception as exc:  # noqa: BLE001
-        if not quiet:
-            log.debug("HA API %s %s failed: %s", method, path, exc)
+        log.debug("Supervisor %s %s failed: %s", method, path, exc)
         return None
+    return body.get("data", {}) if isinstance(body, dict) else {}
 
 
 def app_slug() -> str:
@@ -741,7 +756,7 @@ def _own_ip() -> str:
 
 
 class RemoteAccess:
-    """Keeps the webhook integration installed, configured and loaded.
+    """Keeps the webhook integration installed and announced.
 
     States: disabled (direct mode), setting_up, restart_needed, active, error.
     """
@@ -753,12 +768,12 @@ class RemoteAccess:
         self.detail = ""
         self.webhook_id = get_webhook_id()
         self._wake = threading.Event()
-        self._config_changed = True
-        self._base_url_cache: tuple[float, str] = (0.0, "")
-        # Set when the integration code was updated while HA already had it
-        # loaded: Python modules only reload with a Home Assistant restart.
-        self.pending_restart = False
-        self._saw_ha_down = False
+        self._announced = ""
+        self._started = time.time()
+        # True when this start copied the integration for the first time:
+        # Home Assistant only finds new custom integrations after a restart.
+        self.first_install = False
+        self.report: dict = {}
         self.cleaned_up = False
 
     # files ---------------------------------------------------------------
@@ -778,68 +793,93 @@ class RemoteAccess:
         log.info("Installed Home Assistant integration %s %s", WEBHOOK_DOMAIN, src_manifest.get("version"))
         return True
 
-    def _write_config(self) -> None:
-        target = f"http://{_own_ip()}:{PUBLIC_PORT}/{self.services.secret}/mcp"
-        # app_slug lets the integration notice when the app is uninstalled
-        # and remove itself (Home Assistant runs no app code on uninstall).
-        content = json.dumps({"webhook_id": self.webhook_id, "target_url": target, "app_slug": app_slug()})
+    @staticmethod
+    def bundled_version() -> str:
         try:
-            if WEBHOOK_CONFIG.read_text() == content:
-                return
+            return str(json.loads((COMPONENT_SRC / "manifest.json").read_text()).get("version"))
+        except (OSError, ValueError):
+            return ""
+
+    # discovery -----------------------------------------------------------
+    def discovery_config(self) -> dict:
+        base = f"http://{_own_ip()}:{PUBLIC_PORT}/{self.services.secret}"
+        return {
+            "webhook_id": self.webhook_id,
+            "target_url": f"{base}/mcp",
+            "report_url": f"{base}/ha",
+            "app_slug": app_slug(),
+        }
+
+    def _announce(self) -> bool:
+        config = self.discovery_config()
+        fingerprint = json.dumps(config, sort_keys=True)
+        if fingerprint == self._announced:
+            return True
+        result = supervisor_api("POST", "/discovery", {"service": WEBHOOK_DOMAIN, "config": config})
+        if result is None:
+            return False
+        if result.get("uuid"):
+            write_private(DISCOVERY_FILE, str(result["uuid"]))
+        self._announced = fingerprint
+        log.info("Remote access: settings announced to Home Assistant")
+        return True
+
+    def _withdraw(self) -> None:
+        try:
+            uuid = DISCOVERY_FILE.read_text().strip()
         except OSError:
-            pass
-        write_private(WEBHOOK_CONFIG, content)
-        self._config_changed = True
+            return
+        if uuid and supervisor_api("DELETE", f"/discovery/{uuid}") is not None:
+            DISCOVERY_FILE.unlink(missing_ok=True)
 
-    # HA config entry -----------------------------------------------------
-    def _entry(self):
-        entries = core_api("GET", f"/config/config_entries/entry?domain={WEBHOOK_DOMAIN}", quiet=True)
-        if entries is None:
-            return None, False
-        for entry in entries if isinstance(entries, list) else []:
-            if entry.get("domain") == WEBHOOK_DOMAIN:
-                return entry, True
-        return None, True
+    # status from the integration ----------------------------------------------
+    def receive_report(self, report: dict) -> dict:
+        def text(key: str, limit: int = 300) -> str:
+            value = report.get(key)
+            return str(value)[:limit] if isinstance(value, (str, int, float)) else ""
 
-    def _create_entry(self) -> bool:
-        flow = core_api("POST", "/config/config_entries/flow", {"handler": WEBHOOK_DOMAIN}, quiet=True)
-        return isinstance(flow, dict) and flow.get("type") in ("create_entry", "abort")
+        external, _ = normalize_public_url(text("external_url"))
+        self.report = {
+            "time": time.time(),
+            "external_url": external,
+            "language": text("language", 20),
+            "version": text("integration_version", 20),
+            "restart_needed": bool(report.get("restart_needed")),
+        }
+        self._update_state()
+        return {
+            "login": self.services.login_status(),
+            "notify": bool(self.services.options.get("login_notification", True)),
+            "app_version": os.environ.get("APP_VERSION", "dev"),
+        }
 
-    def _notify_restart(self) -> None:
-        core_api(
-            "POST",
-            "/services/persistent_notification/create",
-            {
-                "notification_id": "garmin_mcp_restart",
-                "title": notification_text("notify_restart_title"),
-                "message": notification_text("notify_restart"),
-            },
-        )
-
-    def _dismiss_notification(self) -> None:
-        core_api(
-            "POST",
-            "/services/persistent_notification/dismiss",
-            {"notification_id": "garmin_mcp_restart"},
-            quiet=True,
-        )
+    def _update_state(self) -> None:
+        if not self.enabled or self.state == "error":
+            return
+        fresh = self.report and time.time() - self.report.get("time", 0) < REPORT_MAX_AGE
+        if fresh:
+            if self.report.get("restart_needed") or self.report.get("version") != self.bundled_version():
+                self.state = "restart_needed"
+            else:
+                if self.state != "active":
+                    log.info("Remote access active")
+                self.state, self.detail = "active", ""
+        elif self.first_install:
+            self.state = "restart_needed"
+        elif time.time() - self._started > 300:
+            self.state = "restart_needed"
+        else:
+            self.state = "setting_up"
 
     # loop ----------------------------------------------------------------
     def _cleanup(self) -> None:
         """Direct mode: remove the helper integration if an earlier start installed it."""
-        if not (COMPONENT_DST.exists() or WEBHOOK_CONFIG.exists()):
+        self._withdraw()  # Home Assistant removes the config entry itself
+        if not (COMPONENT_DST.exists() or LEGACY_WEBHOOK_CONFIG.exists()):
             return
         log.info("Remote access is set to direct – removing the helper integration")
-        for _ in range(10):
-            entry, api_ok = self._entry()
-            if api_ok:
-                break
-            time.sleep(10)
-        if entry:
-            core_api("DELETE", f"/config/config_entries/entry/{entry['entry_id']}")
-        WEBHOOK_CONFIG.unlink(missing_ok=True)
+        LEGACY_WEBHOOK_CONFIG.unlink(missing_ok=True)
         shutil.rmtree(COMPONENT_DST, ignore_errors=True)
-        self._dismiss_notification()
         self.cleaned_up = True
         log.info("Helper integration removed (no Home Assistant restart needed)")
 
@@ -856,94 +896,34 @@ class RemoteAccess:
             return
         try:
             was_installed = (COMPONENT_DST / "manifest.json").exists()
-            if self._install_component() and was_installed:
-                self.pending_restart = True
+            if self._install_component() and not was_installed:
+                self.first_install = True
+            LEGACY_WEBHOOK_CONFIG.unlink(missing_ok=True)
         except OSError as exc:
             self.state, self.detail = "error", str(exc)
             log.error("Remote access: could not install integration: %s", exc)
             return
         while not self.services.stopping:
             try:
-                self._sync()
+                announced = self._announce()
+                self._update_state()
             except Exception as exc:  # noqa: BLE001
+                announced = False
                 log.warning("Remote access: %s", exc)
-            self._wake.wait(30 if self.state != "active" else 300)
+            self._wake.wait(30 if not announced or self.state != "active" else 300)
             self._wake.clear()
-
-    def _sync(self) -> None:
-        self._write_config()
-        entry, api_ok = self._entry()
-        if not api_ok:
-            self._saw_ha_down = True
-            self.state, self.detail = "setting_up", "@api_unreachable"
-            return
-        if self.pending_restart:
-            if self._saw_ha_down:
-                self.pending_restart = False
-                self._config_changed = True
-            else:
-                if self.state != "restart_needed":
-                    log.info("Remote access: integration updated – Home Assistant must be restarted once")
-                    self._notify_restart()
-                self.state = "restart_needed"
-                return
-        if entry is None:
-            if self._create_entry():
-                log.info("Remote access: integration set up")
-                entry, _ = self._entry()
-                self._config_changed = False
-            else:
-                if self.state != "restart_needed":
-                    log.info("Remote access: Home Assistant must be restarted once")
-                    self._notify_restart()
-                self.state = "restart_needed"
-                return
-        if entry and entry.get("state") == "loaded" and self._config_changed:
-            core_api("POST", f"/config/config_entries/entry/{entry['entry_id']}/reload")
-            self._config_changed = False
-            entry, _ = self._entry()
-        if entry and entry.get("state") == "loaded":
-            if self.state != "active":
-                log.info("Remote access active")
-                self._dismiss_notification()
-            self.state = "active"
-        elif entry and entry.get("state") in ("setup_retry", "not_loaded"):
-            core_api("POST", f"/config/config_entries/entry/{entry['entry_id']}/reload")
-            self.state = "setting_up"
-        else:
-            self.state = "error"
-            self.detail = f"@integration_state|{entry.get('state') if entry else 'missing'}"
 
     def rotate(self) -> None:
         self.webhook_id = get_webhook_id(rotate=True)
-        self._config_changed = True
         self._wake.set()
 
     def nudge(self) -> None:
-        self._config_changed = True
         self._wake.set()
 
     def base_url(self) -> str:
-        """Public base URL: option > HA external URL > Nabu Casa remote UI."""
+        """Public base URL: option > address reported by Home Assistant."""
         configured, _ = normalize_public_url(self.services.options.get("public_url"))
-        if configured:
-            return configured
-        cached_at, cached = self._base_url_cache
-        if time.time() - cached_at < 300:
-            return cached
-        url = ""
-        cfg = core_api("GET", "/config", quiet=True)
-        if isinstance(cfg, dict) and cfg.get("external_url"):
-            url = str(cfg["external_url"]).rstrip("/")
-        if not url:
-            cloud = core_api("GET", "/cloud/status", quiet=True)
-            if isinstance(cloud, dict) and cloud.get("remote_domain") and cloud.get("remote_enabled", True):
-                url = f"https://{cloud['remote_domain']}"
-        self._base_url_cache = (time.time(), url)
-        return url
-
-    def restart_home_assistant(self) -> None:
-        core_api("POST", "/services/homeassistant/restart", {})
+        return configured or self.report.get("external_url", "")
 
 
 # --------------------------------------------------------------------------
@@ -1219,23 +1199,12 @@ def _config_url() -> str:
 
 DOCS_BASE = "https://github.com/mw-hbg/ha-apps/blob/main/garmin_mcp"
 LANG_COOKIE = "garmin_mcp_lang"
-_ha_language_cache: tuple[float, str] = (0.0, "")
-
-
-def refresh_ha_language() -> str:
-    """Ask Home Assistant for its language (Settings → System → General).
-
-    Blocking – only call from a background thread, never from a page request."""
-    global _ha_language_cache
-    cfg = core_api("GET", "/config", quiet=True)
-    value = str(cfg.get("language") or "") if isinstance(cfg, dict) else _ha_language_cache[1]
-    _ha_language_cache = (time.time(), value)
-    return value
 
 
 def ha_language() -> str:
-    """Last known Home Assistant language; never blocks (refreshed in the background)."""
-    return _ha_language_cache[1]
+    """Home Assistant language, as reported by the helper integration."""
+    remote = globals().get("REMOTE")
+    return remote.report.get("language", "") if remote is not None else ""
 
 
 def _lang(request: Request) -> str:
@@ -1326,9 +1295,7 @@ async def index(request: Request) -> Response:
     # Restart banner – shown above everything else
     if REMOTE.enabled and REMOTE.state == "restart_needed":
         parts.append(
-            f'<div class="banner"><b>{t["restart_banner_title"]}</b><p>{t["restart_hint"]}</p>'
-            f'<form method="post" action="restart-ha" onsubmit="return confirm(\'{t["restart_confirm"]}\') && busy(this)">{csrf}'
-            f'<button type="submit" data-busy="{t["restart_busy"]}">{t["restart_ha"]}</button></form></div>'
+            f'<div class="banner"><b>{t["restart_banner_title"]}</b><p>{t["restart_hint"]}</p></div>'
         )
 
     # Account card
@@ -1534,15 +1501,6 @@ async def do_rotate(request: Request) -> Response:
     return _redirect(request)
 
 
-async def do_restart_ha(request: Request) -> Response:
-    if (denied := _guard(request)) is not None:
-        return denied
-    if await _form(request) is not None:
-        await anyio.to_thread.run_sync(REMOTE.restart_home_assistant)
-        FLASH.update(kind="ok", key="ok_restart")
-    return _redirect(request)
-
-
 def _page(request: Request, t: dict, body: str, extra_js: str = "") -> HTMLResponse:
     return HTMLResponse(
         f'<!doctype html><html lang="{_lang(request)}"><head><meta charset="utf-8">'
@@ -1673,6 +1631,30 @@ async def set_language(request: Request) -> Response:
     return response
 
 
+async def report(request: Request) -> Response:
+    """Status report of the helper integration, forwarded by nginx.
+
+    nginx adds the key (the secret) – only it knows the secret, so neither the
+    MCP server inside the container nor anything else can fake a report."""
+    key = request.headers.get("x-report-key", "")
+    remote, services = globals().get("REMOTE"), globals().get("SERVICES")
+    if remote is None or services is None or not remote.enabled or not services.secret:
+        return Response("Forbidden", status_code=403)
+    if not secrets.compare_digest(key.encode(), services.secret.encode()):
+        return Response("Forbidden", status_code=403)
+    body = await request.body()
+    if len(body) > 4096:
+        return Response("Too large", status_code=413)
+    try:
+        data = json.loads(body or b"{}")
+    except ValueError:
+        return Response("Bad request", status_code=400)
+    if not isinstance(data, dict):
+        return Response("Bad request", status_code=400)
+    answer = await anyio.to_thread.run_sync(remote.receive_report, data)
+    return JSONResponse(answer)
+
+
 async def status(request: Request) -> Response:
     if (denied := _guard(request, allow_local=True)) is not None:
         return denied
@@ -1726,10 +1708,10 @@ app = Starlette(
         Route("/cancel", do_cancel, methods=["POST"]),
         Route("/logout", do_logout, methods=["POST"]),
         Route("/rotate", do_rotate, methods=["POST"]),
-        Route("/restart-ha", do_restart_ha, methods=["POST"]),
         Route("/test", do_test, methods=["POST"]),
         Route("/status.json", status),
         Route("/lang", set_language),
+        Route("/report", report, methods=["POST"]),
         Route("/tools", tools_page),
         Route("/tools", save_tools, methods=["POST"]),
         Route("/tools/reset", reset_tools, methods=["POST"]),

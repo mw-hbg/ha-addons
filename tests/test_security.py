@@ -4,9 +4,11 @@ confined, logins are throttled, texts can't break the page."""
 import asyncio
 import json
 import os
+import re
 import stat
 
 import pytest
+from pathlib import Path
 
 import launcher as L
 
@@ -173,32 +175,81 @@ def test_sync_tools_are_guarded_too(run_mcp):
     assert guarded(1, output_path="x.gpx") == "written"
 
 
-def test_page_requests_never_wait_for_home_assistant(monkeypatch):
-    calls = []
-    monkeypatch.setattr(L, "core_api", lambda *a, **k: calls.append(a) or {"language": "de"})
-    L.ha_language()
-    assert calls == []
-    assert L.refresh_ha_language() == "de" and L.ha_language() == "de"
-    monkeypatch.setattr(L, "core_api", lambda *a, **k: None)  # HA unreachable: keep last value
-    assert L.refresh_ha_language() == "de"
-    monkeypatch.setattr(L, "_ha_language_cache", (0.0, ""))
-
-
 def test_translated_details_cannot_crash_the_page():
     t = {"detail_integration_state": "state {value} {n} {"}
     assert L.detail_text(t, "@integration_state|loaded") == "state loaded {n} {"
     assert L.detail_text(t, "<b>") == "&lt;b&gt;"
 
 
-def test_webhook_config_tells_the_integration_its_app(monkeypatch, tmp_path):
-    monkeypatch.setattr(L, "WEBHOOK_CONFIG", tmp_path / "hook.json")
+def test_discovery_tells_the_integration_everything_it_needs(monkeypatch):
     monkeypatch.setattr(L.socket, "gethostname", lambda: "abcd1234-garmin-mcp")
+    monkeypatch.setattr(L, "_own_ip", lambda: "172.30.33.5")
+    services = L.Services()
+    remote = L.RemoteAccess(services)
+    config = remote.discovery_config()
+    assert config["app_slug"] == "abcd1234_garmin_mcp"
+    assert config["target_url"] == f"http://172.30.33.5:8100/{services.secret}/mcp"
+    assert config["report_url"] == f"http://172.30.33.5:8100/{services.secret}/ha"
+    import garmin_mcp_webhook.config_flow as flow
+
+    assert flow.entry_data(config, "abcd1234_garmin_mcp") is not None
+
+
+def test_app_has_no_home_assistant_api():
+    """The app must not be able to change anything in Home Assistant via its API."""
+    cfg = (Path(L.__file__).resolve().parents[2] / "config.yaml").read_text()
+    for key in ("homeassistant_api", "hassio_api", "auth_api", "docker_api", "full_access", "host_network", "privileged"):
+        assert f"{key}:" not in cfg, key
+    assert "garmin_mcp_webhook" in cfg.split("discovery:")[1].split("\n\n")[0]
+    source = Path(L.__file__).read_text()
+    assert "/core/api" not in source and "core/websocket" not in source
+    assert re.findall(r'supervisor_api\("(?:POST|DELETE|GET)", f?"([^"{]+)', source) == ["/discovery", "/discovery/"]
+
+
+def test_report_needs_the_key_from_nginx(monkeypatch):
+    from starlette.testclient import TestClient
+
+    services = L.Services()
+    remote = L.RemoteAccess(services)
+    monkeypatch.setattr(L, "SERVICES", services, raising=False)
+    monkeypatch.setattr(L, "REMOTE", remote, raising=False)
+    monkeypatch.setattr(services, "login_status", lambda: "failed")
+    with TestClient(L.app, client=("127.0.0.1", 50000)) as client:
+        assert client.post("/report", json={}).status_code == 403
+        assert client.post("/report", json={}, headers={"X-Report-Key": "wrong"}).status_code == 403
+        too_big = {"external_url": "x" * 5000}
+        assert client.post("/report", json=too_big, headers={"X-Report-Key": services.secret}).status_code == 413
+        resp = client.post(
+            "/report",
+            json={"external_url": "https://home.example.com/lovelace", "language": "de", "integration_version": "1", "evil": "<script>"},
+            headers={"X-Report-Key": services.secret},
+        )
+    assert resp.status_code == 200 and resp.json()["login"] == "failed"
+    assert remote.report["external_url"] == "https://home.example.com" and remote.base_url() == "https://home.example.com"
+    assert "evil" not in remote.report
+
+
+def test_report_endpoint_only_in_webhook_mode_and_only_internal():
+    services = L.Services()
+    conf = services._report_location()
+    assert f"/{services.secret}/ha" in conf and "allow 172.30.32.0/23;" in conf and "deny all;" in conf
+    services.options = {**services.options, "remote_access": "direct"}
+    assert services._report_location() == ""
+
+
+def test_remote_state_follows_the_reports(monkeypatch):
     remote = L.RemoteAccess(L.Services())
-    remote.webhook_id = "garmin_mcp_x"
-    remote._write_config()
-    data = json.loads((tmp_path / "hook.json").read_text())
-    assert data["app_slug"] == "abcd1234_garmin_mcp"
-    assert stat.S_IMODE(os.stat(tmp_path / "hook.json").st_mode) == 0o600
+    version = remote.bundled_version()
+    remote.receive_report({"integration_version": version})
+    assert remote.state == "active"
+    remote.receive_report({"integration_version": "0.0.1"})
+    assert remote.state == "restart_needed"
+    remote.receive_report({"integration_version": version, "restart_needed": True})
+    assert remote.state == "restart_needed"
+    remote.report["time"] = 0  # no report for a long time
+    remote.first_install = True
+    remote._update_state()
+    assert remote.state == "restart_needed"
 
 
 def test_page_is_only_for_home_assistant(monkeypatch):
@@ -221,5 +272,41 @@ def test_page_is_only_for_home_assistant(monkeypatch):
             assert client.get("/status.json").status_code == status_json, ip
             if page:
                 assert client.get("/").status_code == page, ip
-                assert client.post("/restart-ha").status_code == page, ip
+                assert client.post("/rotate").status_code == page, ip
                 assert client.post("/tools").status_code == page, ip
+
+
+def test_landlock_limits_the_mcp_server_to_its_folders(tmp_path):
+    """Runs in a child process: Landlock cannot be undone."""
+    import subprocess
+    import sys
+    import textwrap
+
+    import sandbox
+
+    allowed, outside = tmp_path / "allowed", tmp_path / "outside"
+    allowed.mkdir()
+    outside.mkdir()
+    (outside / "secrets.yaml").write_text("x")
+    code = textwrap.dedent(f"""
+        import os, sys
+        sys.path.insert(0, {str(Path(sandbox.__file__).parent)!r})
+        import sandbox
+        prefix = os.path.realpath(sys.prefix)
+        if not sandbox.restrict([{str(allowed)!r}], sandbox.READ_PATHS + (prefix, os.path.realpath(sys.base_prefix))):
+            sys.exit(77)
+        open({str(allowed / "ok")!r}, "w").write("ok")
+        for action in (lambda: open({str(outside / "secrets.yaml")!r}).read(),
+                       lambda: open({str(outside / "new")!r}, "w"),
+                       lambda: os.listdir({str(tmp_path)!r})):
+            try:
+                action()
+            except PermissionError:
+                continue
+            sys.exit("not blocked")
+    """)
+    result = subprocess.run([sys.executable, "-c", code], capture_output=True, text=True)
+    if result.returncode == 77:
+        pytest.skip("Landlock not available on this machine")
+    assert result.returncode == 0, result.stderr + result.stdout
+    assert (allowed / "ok").read_text() == "ok"

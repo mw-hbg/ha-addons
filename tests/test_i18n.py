@@ -111,13 +111,12 @@ def test_missing_texts_fall_back_to_english(monkeypatch, tmp_path):
     assert "broken" not in langs
 
 
-def test_notifications_follow_home_assistant_language(monkeypatch):
-    monkeypatch.setattr(L, "_ha_language_cache", (0.0, ""))
-    monkeypatch.setattr(L, "core_api", lambda *a, **k: {"language": "de"})
-    assert "Anmeldung" in L.notification_text("notify_login")
-    monkeypatch.setattr(L, "_ha_language_cache", (0.0, ""))
-    monkeypatch.setattr(L, "core_api", lambda *a, **k: {"language": "es"})
-    assert "login" in L.notification_text("notify_login")
+def test_page_falls_back_to_the_language_reported_by_home_assistant(monkeypatch):
+    remote = L.RemoteAccess(L.Services())
+    monkeypatch.setattr(L, "REMOTE", remote, raising=False)
+    remote.receive_report({"language": "de"})
+    assert L.ha_language() == "de"
+    assert i18n.pick(None, None, L.ha_language()) == "de"
 
 
 def test_page_language_switch(monkeypatch):

@@ -27,7 +27,10 @@ von Garmin zu deinem KI-Assistenten.
   Home Assistant ohnehin von außen nutzt – per Webhook.
 * **Verbindungstest** per Klick – Server, Garmin-Anmeldung und Connector-URL
   aus dem Internet.
-* **Benachrichtigungen**, wenn ein Neustart nötig ist oder die Garmin-Anmeldung
+* **Kein Zugriff auf die Home-Assistant-API**, und der MCP-Server ist in seine eigenen
+  Ordner eingesperrt (eingeschränkter Benutzer + Linux-Landlock) – über diese App lässt sich
+  von außen nichts in Home Assistant ändern.
+* **Reparatur-Hinweise**, wenn ein Neustart nötig ist oder die Garmin-Anmeldung
   abgelaufen ist.
 * **Geschützter Endpunkt:** nur über eine lange, zufällige geheime URL
   erreichbar, die du per Klick neu erzeugen kannst.

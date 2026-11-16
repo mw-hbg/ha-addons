@@ -8,7 +8,11 @@ echo '{"log_level": "info"}' > "$data/options.json"
 
 # ALLOW_ANY_UI_CLIENT: the page normally only answers Home Assistant's ingress
 # proxy; here the checks run inside the container (127.0.0.1).
-docker run -d --name app-smoke -e ALLOW_ANY_UI_CLIENT=1 -v "$data:/data" "$image" >/dev/null
+# A fake Home Assistant config folder with a file readable for everyone.
+ha=$(mktemp -d)
+echo "api_password: top-secret" > "$ha/secrets.yaml"
+chmod 755 "$ha"; chmod 644 "$ha/secrets.yaml"
+docker run -d --name app-smoke -e ALLOW_ANY_UI_CLIENT=1 -v "$data:/data" -v "$ha:/homeassistant" "$image" >/dev/null
 trap 'docker logs app-smoke || true; docker rm -f app-smoke >/dev/null 2>&1 || true' EXIT
 
 check() {
@@ -97,6 +101,37 @@ try:
 except PermissionError:
     pass
 import garmin_mcp  # the server itself still loads
+"
+
+echo "3c. Landlock: the MCP server reaches only its own folders"
+docker exec -u garmin -e GARMINTOKENS=/data/garmin_tokens -e HOME=/data/mcp_home -e GARMIN_FIT_DOWNLOAD_DIR=/data/downloads -w /data/downloads app-smoke python3 -c "
+import sys; sys.path.insert(0, '/app')
+import run_mcp
+assert run_mcp.lock_down(), 'Landlock not active'
+for path in ('/homeassistant/secrets.yaml', '/data/options.json'):
+    try:
+        open(path).read()
+    except PermissionError:
+        continue
+    raise SystemExit(f'could read {path} despite Landlock')
+try:
+    open('/homeassistant/new.yaml', 'w')
+    raise SystemExit('could write to the Home Assistant folder')
+except PermissionError:
+    pass
+open('/data/downloads/x.fit', 'wb').write(b'x')
+open('/data/garmin_tokens/probe', 'w').write('x')
+open('/tmp/probe', 'w').write('x')
+import garmin_mcp.activity_analysis, garmin_mcp.courses  # code still loads
+from curl_cffi import requests  # HTTPS to Garmin still works (DNS, certificates)
+try:
+    r = requests.get('https://connect.garmin.com/', impersonate='chrome', timeout=20)
+    print('   HTTPS to Garmin:', r.status_code)
+except Exception as exc:
+    text = str(exc).lower()
+    if 'certificate' in text or 'permission' in text or 'denied' in text:
+        raise
+    print('   (network check skipped:', type(exc).__name__, ')')
 "
 
 echo "4. Health check passes"

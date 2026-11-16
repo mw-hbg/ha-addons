@@ -69,12 +69,14 @@ ist das meist bereits der Fall. Ohne Zustimmung schlägt das Schreiben mit HTTP 
 
 ### 3. Home Assistant einmal neu starten
 
-Beim ersten Start installiert die App ihre Hilfs-Integration. Die App-Seite zeigt dann
-**„Home Assistant muss einmal neu gestartet werden“** mit einem Knopf dafür (zusätzlich
-erscheint eine Benachrichtigung). Nach dem Neustart steht der Status auf **Aktiv** –
-sonst ist nichts einzurichten. Bringt ein späteres App-Update eine neue Version der
-Hilfs-Integration mit, zeigt Home Assistant einen **Reparatur-Hinweis**
-(*Einstellungen → Reparaturen*) mit Knopf zum Neustarten – wie bei HACS.
+Beim ersten Start kopiert die App ihre Hilfs-Integration in Home Assistant. Die App-Seite
+zeigt dann **„Home Assistant muss einmal neu gestartet werden“**: neu starten über
+*Einstellungen → System → Neu starten*. Nach dem Neustart richtet Home Assistant die
+Integration selbst ein (die App meldet ihre Einstellungen über die offizielle
+App-Erkennung von Home Assistant), und der Status steht auf **Aktiv** – sonst ist nichts
+einzurichten. Bringt ein späteres App-Update eine neue Version der Hilfs-Integration mit,
+zeigt Home Assistant einen **Reparatur-Hinweis** (*Einstellungen → Reparaturen*) mit Knopf
+zum Neustarten – wie bei HACS.
 
 Voraussetzung: Home Assistant ist bereits per HTTPS aus dem Internet erreichbar (Nabu
 Casa, Cloudflare-Tunnel, Reverse Proxy …). Die App nimmt die externe Adresse aus
@@ -126,20 +128,28 @@ Die **Connector-URL** von der App-Seite kopieren. Sie sieht so aus:
 * **Behandle die Connector-URL wie ein Passwort.** Wer sie kennt, kann dein Garmin-Konto
   über die freigegebenen Tools nutzen. Keine Screenshots oder Protokolle teilen, in denen
   sie steht. Ist sie bekannt geworden: **Neue geheime URL erzeugen** auf der App-Seite.
-* **Worauf die App in Home Assistant zugreift:** Sie schreibt nur die Hilfs-Integration
-  (`custom_components/garmin_mcp_webhook`) und deren Einstellungsdatei
-  (`.garmin_mcp_webhook.json`) in den Konfigurationsordner und nutzt die
-  Home-Assistant-API nur, um diese Integration einzurichten, die Neustart-Benachrichtigung
-  anzuzeigen und – wenn du den Knopf drückst – Home Assistant neu zu starten. Sonst liest
-  oder ändert sie nichts. Die Hilfs-Integration fragt zusätzlich alle 10 Minuten beim
-  Supervisor nach, ob die App noch installiert ist, um sich nach dem Deinstallieren selbst
-  zu entfernen. Mit `remote_access: direct` fasst sie den Konfigurationsordner
-  gar nicht an.
-* **Die KI kommt nicht an deine Dateien:** Datei-Tools (Strecke hochladen, Aktivität
-  herunterladen) arbeiten nur im eigenen Download-Ordner der App. Der MCP-Server bekommt
-  keinen Zugang zu Home Assistant und läuft als eingeschränkter Benutzer: Schreiben darf
-  er nur seine Garmin-Tokens und Downloads – nicht den Home-Assistant-Konfigurationsordner,
-  nicht die Geheimnisse der App und nicht die App-Seite.
+* **Die App hat keinen Zugriff auf die Home-Assistant-API** – sie kann in Home Assistant
+  nichts lesen, schalten oder ändern. Ihr einziger Zugriff ist der Konfigurationsordner,
+  und zwar nur für eine Sache: die Hilfs-Integration nach
+  `custom_components/garmin_mcp_webhook` kopieren (und im Modus `direct` wieder
+  entfernen). Einzelne Ordner kann Home Assistant nicht freigeben, deshalb ist der ganze
+  Ordner eingebunden; benutzt wird er nur vom internen Teil der App, der von außen nicht
+  erreichbar ist.
+* **Einstellungen laufen über die offizielle App-Erkennung** des Supervisors: Die App
+  meldet Webhook-ID und interne Adresse, Home Assistant richtet die Integration damit
+  ein. Umgekehrt meldet sich die Integration jede Minute bei der App (nur im internen
+  Netz, geschützt durch den geheimen Pfad und einen Schlüssel): mit deiner externen
+  Adresse und Sprache für die App-Seite, und sie fragt den Garmin-Anmeldestatus ab, um
+  einen Reparatur-Hinweis anzuzeigen. Nichts in diesem Austausch kann Home Assistant
+  verändern.
+* **Aus dem Internet** ist nur der MCP-Endpunkt erreichbar (über den Webhook oder deinen
+  eigenen Hostnamen). Er führt nur Garmin-Tools aus – von dort gibt es keinen Weg zu Home
+  Assistant oder zur App-Seite.
+* **Der MCP-Server ist eingesperrt:** Er läuft als eingeschränkter Benutzer und sperrt
+  sich zusätzlich mit *Landlock* (Linux-Kernel) selbst ein: Er erreicht nur seine eigenen
+  Ordner (Garmin-Tokens, Downloads) – nicht den Home-Assistant-Konfigurationsordner (nicht
+  einmal lesend), nicht die Geheimnisse der App und nicht die App-Seite. Datei-Tools
+  (Strecke hochladen, Aktivität herunterladen) arbeiten nur im Download-Ordner.
 * **Schreibrechte bewusst wählen** (siehe unten). `read_only` ist am sichersten;
   `create_only` (Standard) löscht oder überschreibt nie etwas.
 * **Zusätzliche Absicherung – IP-Freigabeliste:** Nutzt du nur einen KI-Dienst, kannst du
@@ -162,17 +172,17 @@ Zu jedem fehlgeschlagenen Punkt steht ein Hinweis, was zu tun ist.
 
 ## Benachrichtigungen
 
-* **Neustart nötig** – nach der Installation und nach Updates der Hilfs-Integration
-  (Hinweis auf der App-Seite, Benachrichtigung, Reparatur-Hinweis).
+Die Hilfs-Integration zeigt sie als **Reparatur-Hinweise** (*Einstellungen → Reparaturen*)
+in der Sprache von Home Assistant:
+
+* **Neustart nötig** – nach Updates der Hilfs-Integration (mit Knopf zum Neustarten).
+  Nach der ersten Installation steht der Hinweis auf der App-Seite.
 * **Garmin-Anmeldung nicht mehr gültig** – z. B. wenn die Tokens nach etwa sechs Monaten
   abgelaufen sind oder widerrufen wurden. Vorübergehende Fehler (kein Internet nach einem
-  Stromausfall, Garmin gestört) behebt die App selbst durch erneute Versuche; erst wenn das
-  nicht klappt, zeigt Home Assistant eine Benachrichtigung (abschaltbar mit
-  `login_notification`). Dann auf der App-Seite neu anmelden. Die KI-App bekommt in dem
-  Fall eine verständliche Meldung statt eines Fehlers.
-
-Benachrichtigungen erscheinen in der Sprache von Home Assistant
-(*Einstellungen → System → Allgemein*).
+  Stromausfall, Garmin gestört) behebt die App selbst durch erneute Versuche; erst wenn
+  das nicht klappt, erscheint der Hinweis (abschaltbar mit `login_notification`). Auf der
+  App-Seite neu anmelden – der Hinweis verschwindet dann von selbst. Die KI-App bekommt in
+  dem Fall eine verständliche Meldung statt eines Fehlers.
 
 ## Sprache
 
@@ -213,7 +223,7 @@ Neustart der App; die App-Seite zeigt dann, wie viele Tools aktiv sind.
 | `remote_access` | `webhook` (Standard) – erreichbar über deine bestehende Home-Assistant-Adresse, braucht einen Neustart von Home Assistant. `direct` – du leitest einen eigenen HTTPS-Hostnamen auf Port 8100; beim Umstellen entfernt die App ihre Hilfs-Integration selbst. |
 | `public_url` | Optional, meist leer. Deine öffentliche Home-Assistant-Adresse (webhook) bzw. dein eigener Hostname (direct); wird nur zum Anzeigen der Connector-URL und für den Verbindungstest gebraucht. Verwendet werden nur Schema und Host, eine kopierte Browser-Adresse geht also auch. Die App-Seite warnt, wenn sie ungültig ist oder `http://` nutzt. |
 | `keep_downloads_days` | Aktivitätsdateien (FIT/GPX), die die KI herunterlädt, werden nach so vielen Tagen gelöscht (Standard 7, `0` = nie). Downloads landen nie in einem Home-Assistant-Backup. |
-| `login_notification` | `true` (Standard): Benachrichtigung in Home Assistant, wenn die Garmin-Anmeldung nicht mehr funktioniert und die App das durch erneute Versuche nicht beheben konnte. |
+| `login_notification` | `true` (Standard): Reparatur-Hinweis in Home Assistant, wenn die Garmin-Anmeldung nicht mehr funktioniert und die App das durch erneute Versuche nicht beheben konnte. |
 | `log_level` | `debug`, `info` (Standard), `warning`, `error`. Nur `debug` protokolliert zusätzlich jede einzelne MCP-Anfrage. |
 
 `tool_areas`, `write_access`, `enable_tools` und `disable_tools` werden ignoriert, sobald
@@ -251,26 +261,26 @@ eine vorhandene Aktivität und braucht bei `create_only` deshalb `enable_tools`.
 | Workouts schreiben schlägt mit HTTP 412 fehl | Zustimmung zum Upload fehlt: Garmin Connect → Einstellungen → Datenschutzeinstellungen → Daten → *Gerätedaten hochladen*. |
 | Bei der Anmeldung wird ein Code verlangt | Zwei-Faktor-Anmeldung ist aktiv – den Code eingeben, den Garmin geschickt hat. |
 | KI-App will beim Hinzufügen eine Anmeldung bei Home Assistant | Kommt von ha-mcp (falls installiert), siehe Schritt 4. Bestätigen. |
-| Status bleibt *Home Assistant muss einmal neu gestartet werden* | Home Assistant neu starten (Knopf auf der App-Seite oder *Einstellungen → System → Neu starten*). |
+| Status bleibt *Home Assistant muss einmal neu gestartet werden* | Home Assistant neu starten (*Einstellungen → System → Neu starten*). Bleibt er danach, unter *Einstellungen → System → Protokolle* nach `garmin_mcp_webhook` schauen. |
 | Connector meldet *Server nicht erreichbar* | Prüfen, ob Home Assistant von außen erreichbar ist, ob die URL das aktuelle Geheimnis enthält und ob Firewall-/WAF-Regeln greifen. |
 | Die KI sagt, das Tool gibt es nicht | Es ist durch `tool_areas`, `write_access` oder `disable_tools` abgeschaltet. |
 
 ## Deinstallieren
 
-Einfach die App deinstallieren. Home Assistant führt beim Deinstallieren keinen Code der
-App aus, deshalb räumt die Hilfs-Integration selbst auf: Alle 10 Minuten fragt sie den
-Supervisor, ob die App noch installiert ist. Ist sie weg (zwei Prüfungen hintereinander,
-also nach 10–20 Minuten), entfernt sie ihren Eintrag unter *Geräte & Dienste*, löscht
-`custom_components/garmin_mcp_webhook` und `.garmin_mcp_webhook.json` und zeigt eine
-Benachrichtigung. Ein Neustart ist nicht nötig. Ist Home Assistant in dem Moment aus,
-passiert das nach dem nächsten Start.
+Einfach die App deinstallieren. Der Supervisor zieht dann die Meldung der App zurück, und
+Home Assistant entfernt den Eintrag der Integration unter *Geräte & Dienste* selbst – der
+Webhook ist sofort weg. Danach löscht die Hilfs-Integration ihren Ordner
+`custom_components/garmin_mcp_webhook` und zeigt eine Benachrichtigung. Ein Neustart ist
+nicht nötig.
 
-Solange die App nur gestoppt ist oder der Supervisor nicht antwortet, wird nichts entfernt.
+War Home Assistant beim Deinstallieren aus, merkt die Hilfs-Integration das nach dem
+nächsten Start: Alle 10 Minuten fragt sie den Supervisor, ob die App noch installiert ist,
+und entfernt sich, sobald die App zweimal hintereinander fehlt. Solange die App nur
+gestoppt ist oder der Supervisor nicht antwortet, wird nichts entfernt.
 
 Von Hand entfernen geht auch: *Einstellungen → Geräte & Dienste → Garmin Connect MCP
-(remote access) → Löschen*, dann den Ordner `custom_components/garmin_mcp_webhook` und die
-Datei `.garmin_mcp_webhook.json` aus dem Konfigurationsordner löschen und Home Assistant
-neu starten.
+(remote access) → Löschen*, dann den Ordner `custom_components/garmin_mcp_webhook` aus dem
+Konfigurationsordner löschen und Home Assistant neu starten.
 
 ## Dank und Lizenzen
 

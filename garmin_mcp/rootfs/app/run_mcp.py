@@ -15,6 +15,7 @@
 import functools
 import inspect
 import json
+import logging
 import os
 
 import mcp.server.fastmcp as fastmcp_module
@@ -127,7 +128,27 @@ def _tool(self, *args, **kwargs):
 
 garmin_mcp._ToolFilter.tool = _tool
 
+def lock_down() -> bool:
+    """Landlock: from here on the server reaches only its own folders."""
+    import sandbox
+
+    writable = [
+        SANDBOX,
+        os.environ.get("GARMINTOKENS", "/data/garmin_tokens"),
+        os.environ.get("HOME", "/data/mcp_home"),
+        "/tmp",
+    ]
+    try:
+        return sandbox.restrict(writable)
+    except OSError as exc:  # never leave the server half-configured
+        logging.getLogger("garmin_mcp_app").error("Landlock could not be applied: %s", exc)
+        return False
+
+
 if __name__ == "__main__":
+    logging.basicConfig(level=_level, format="%(asctime)s %(levelname)s %(message)s")
+    logging.getLogger("garmin_mcp_app").setLevel(logging.INFO)  # sandbox status line
     os.makedirs(SANDBOX, exist_ok=True)
     os.chdir(SANDBOX)
+    lock_down()
     garmin_mcp.main()

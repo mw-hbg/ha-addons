@@ -15,10 +15,15 @@ arch:
 homeassistant: "2026.2.0"
 stage: experimental
 ingress: true
-homeassistant_api: true
+# No access to the Home Assistant API. The helper integration is set up
+# through the Supervisor's discovery service instead.
+discovery:
+  - garmin_mcp_webhook
 map:
-  # Only used to install the small helper integration that provides the
-  # webhook (custom_components/garmin_mcp_webhook) and its config file.
+  # Only used to copy the small helper integration that provides the webhook
+  # into custom_components/garmin_mcp_webhook (and to remove it again in
+  # direct mode). Home Assistant offers no narrower mapping. Only the app's
+  # internal part (root) touches it – never the internet-facing MCP server.
   - type: homeassistant_config
     read_only: false
     path: /homeassistant

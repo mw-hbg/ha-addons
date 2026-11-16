@@ -6,6 +6,13 @@
 and generate a new secret URL on the app page (**New URL**), then replace it in your AI app.
 
 Security
+- The app no longer has any access to the Home Assistant API. The helper integration is
+  set up through the Supervisor's official discovery service; Home Assistant removes it
+  by itself when the app is uninstalled. Notices (restart required, Garmin login invalid)
+  now come from the integration as repair notices; the restart button on the app page is
+  gone (use *Settings → System → Restart* or the repair notice).
+- The MCP server additionally locks itself in with Linux Landlock: it can only reach its
+  own folders and can no longer even read the Home Assistant configuration folder.
 - The internet-facing MCP server now runs as an unprivileged user. Even if the Garmin
   server had a vulnerability, it could not write to the Home Assistant configuration
   folder, read the app's secrets or use the app page – only its tokens and downloads

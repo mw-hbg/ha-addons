@@ -26,7 +26,10 @@ without any third-party service in between.
   Home Assistant (Nabu Casa, Cloudflare Tunnel, reverse proxy …) via a webhook.
 * **Connection test** with one click – server, Garmin login and connector URL
   from the internet.
-* **Notifications** when a restart is needed or the Garmin login expired.
+* **Repair notices** in Home Assistant when a restart is needed or the Garmin login expired.
+* **No access to the Home Assistant API**, and the MCP server is locked into its own
+  folders (unprivileged user + Linux Landlock) – nothing in Home Assistant can be changed
+  from outside through this app.
 * **Protected endpoint:** only reachable via a long random secret URL, which you
   can rotate with one click.
 * **English and German** – app page, configuration, notifications and documentation;

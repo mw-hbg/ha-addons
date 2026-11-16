@@ -142,23 +142,23 @@ def test_cleanup_never_follows_symlinks(tmp_path, monkeypatch):
     assert keep.exists()
 
 
-# --- login notification can be switched off -------------------------------------------
+# --- login state for the helper integration --------------------------------------------
 
-def test_login_notification_option(monkeypatch):
-    calls = []
-    monkeypatch.setattr(L, "core_api", lambda *a, **k: calls.append(a))
+def test_login_status_and_notification_switch(monkeypatch):
     monkeypatch.setattr(L, "has_tokens", lambda: True)
     services = L.Services()
     monkeypatch.setattr(services, "mcp_state", lambda: "failed")
-    monkeypatch.setattr(services, "restart_mcp", lambda: None)
+    services._login_failures = 1
+    assert services.login_status() == "starting"  # first failure: retry quietly
+    services._login_failures = 2
+    assert services.login_status() == "failed"
+    monkeypatch.setattr(services, "mcp_state", lambda: "ready")
+    assert services.login_status() == "ok"
+    monkeypatch.setattr(L, "has_tokens", lambda: False)
+    assert services.login_status() == "logged_out"
     services.options = opts(login_notification=False)
-    services._login_failures = 5
-    services._next_login_retry = time.time() + 999
-    services._check_login()
-    assert calls == []
-    services.options = opts(login_notification=True)
-    services._check_login()
-    assert any("persistent_notification/create" in c[1] for c in calls)
+    remote = L.RemoteAccess(services)
+    assert remote.receive_report({})["notify"] is False
 
 
 # --- the page is never cached and only framed by Home Assistant -----------------------

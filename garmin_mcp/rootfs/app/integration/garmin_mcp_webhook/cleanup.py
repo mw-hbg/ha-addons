@@ -1,14 +1,15 @@
 """Remove this helper integration once its app has been uninstalled.
 
-Home Assistant lets an app run no code when it is uninstalled, so the app
-cannot clean up after itself. Instead the integration checks every few minutes
-whether the app is still installed (asked from the Supervisor). Only when the
-Supervisor answers and the app is missing from the list of installed apps in
-two checks in a row, it
+When the app is uninstalled, the Supervisor withdraws its discovery
+announcement and Home Assistant removes the config entry by itself (then
+async_remove_entry runs). The files in custom_components stay, though, and if
+Home Assistant was off during the uninstall the entry stays too. So the
+integration also checks every 10 minutes whether the app is still installed
+(asked from the Supervisor). Only when the Supervisor answers and the app is
+missing from the list of installed apps in two checks in a row, it
 
 * removes its config entry (the webhook stops existing immediately),
-* deletes its own files (custom_components/garmin_mcp_webhook and
-  .garmin_mcp_webhook.json),
+* deletes its own folder custom_components/garmin_mcp_webhook,
 * shows a notification that nothing else needs to be done.
 
 If the Supervisor cannot be asked (not a Supervisor installation, an error, an
@@ -28,14 +29,13 @@ from homeassistant.core import HomeAssistant
 from homeassistant.helpers import issue_registry as ir
 from homeassistant.helpers.event import async_track_time_interval
 
-from .const import CONFIG_FILE, DOMAIN
+from .const import DOMAIN, ISSUE_LOGIN, ISSUE_RESTART, LEGACY_CONFIG_FILE
 
 _LOGGER = logging.getLogger(__name__)
 
 CHECK_INTERVAL = timedelta(minutes=10)
 CONFIRMATIONS = 2
 _INTEGRATION_DIR = Path(__file__).resolve().parent
-_RESTART_ISSUE = "restart_required"
 
 
 async def async_installed_apps(hass: HomeAssistant) -> set[str] | None:
@@ -78,20 +78,34 @@ def _delete_files() -> None:
     if _INTEGRATION_DIR.name == DOMAIN and _INTEGRATION_DIR.parent.name == "custom_components":
         shutil.rmtree(_INTEGRATION_DIR, ignore_errors=True)
     try:
-        CONFIG_FILE.unlink()
+        LEGACY_CONFIG_FILE.unlink()
     except FileNotFoundError:
         pass
 
 
-async def async_remove_everything(hass: HomeAssistant, entry: ConfigEntry) -> None:
+async def async_delete_files(hass: HomeAssistant) -> None:
+    """Delete the integration's files and tell the user (entry already removed)."""
     from homeassistant.components import persistent_notification
 
     title, message = await hass.async_add_executor_job(_removal_text, hass.config.language)
     _LOGGER.warning("The Garmin Connect MCP app is no longer installed – removing its helper integration")
-    ir.async_delete_issue(hass, DOMAIN, _RESTART_ISSUE)
-    await hass.config_entries.async_remove(entry.entry_id)
+    for issue in (ISSUE_RESTART, ISSUE_LOGIN):
+        ir.async_delete_issue(hass, DOMAIN, issue)
     await hass.async_add_executor_job(_delete_files)
     persistent_notification.async_create(hass, message, title=title, notification_id=f"{DOMAIN}_removed")
+
+
+async def async_app_gone(hass: HomeAssistant, app_slug: str | None) -> bool:
+    """True only if the Supervisor answered and the app is not installed."""
+    if not app_slug:
+        return False
+    installed = await async_installed_apps(hass)
+    return installed is not None and app_slug not in installed
+
+
+async def async_remove_everything(hass: HomeAssistant, entry: ConfigEntry) -> None:
+    # Removing the entry runs async_remove_entry, which deletes the files.
+    await hass.config_entries.async_remove(entry.entry_id)
 
 
 def async_watch_app(hass: HomeAssistant, entry: ConfigEntry, app_slug: str | None) -> None:

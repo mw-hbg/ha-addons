@@ -110,7 +110,7 @@ def test_secret_path_is_long_random_and_stable():
 
 
 def test_nginx_only_forwards_the_secret_path():
-    conf = L.NGINX_TEMPLATE.format(public_port=8100, mcp_port=8000, secret="S3CRET")
+    conf = L.NGINX_TEMPLATE.format(public_port=8100, mcp_port=8000, secret="S3CRET", report_location="")
     assert "location = /S3CRET/mcp" in conf
     assert "return 404" in conf
     assert "access_log off" in conf
@@ -122,20 +122,15 @@ def test_direct_mode_removes_helper_integration(monkeypatch, tmp_path):
     component = tmp_path / "custom_components" / "garmin_mcp_webhook"
     component.mkdir(parents=True)
     (component / "manifest.json").write_text("{}")
-    config_file = tmp_path / ".garmin_mcp_webhook.json"
-    config_file.write_text("{}")
+    legacy = tmp_path / ".garmin_mcp_webhook.json"
+    legacy.write_text("{}")
     monkeypatch.setattr(L, "COMPONENT_DST", component)
-    monkeypatch.setattr(L, "WEBHOOK_CONFIG", config_file)
+    monkeypatch.setattr(L, "LEGACY_WEBHOOK_CONFIG", legacy)
+    monkeypatch.setattr(L, "DISCOVERY_FILE", tmp_path / "discovery_uuid")
+    (tmp_path / "discovery_uuid").write_text("1234abcd")
 
     calls = []
-
-    def fake_api(method, path, data=None, quiet=False):
-        calls.append((method, path))
-        if method == "GET":
-            return [{"domain": "garmin_mcp_webhook", "entry_id": "abc", "state": "loaded"}]
-        return {}
-
-    monkeypatch.setattr(L, "core_api", fake_api)
+    monkeypatch.setattr(L, "supervisor_api", lambda method, path, data=None: calls.append((method, path)) or {})
     L.OPTIONS_FILE.write_text(json.dumps({"remote_access": "direct"}))
     try:
         remote = L.RemoteAccess(L.Services())
@@ -143,6 +138,8 @@ def test_direct_mode_removes_helper_integration(monkeypatch, tmp_path):
         remote.run()
     finally:
         L.OPTIONS_FILE.unlink()
-    assert ("DELETE", "/config/config_entries/entry/abc") in calls
-    assert not component.exists() and not config_file.exists()
+    # Home Assistant removes the config entry itself when the discovery is withdrawn
+    assert calls == [("DELETE", "/discovery/1234abcd")]
+    assert not component.exists() and not legacy.exists()
+    assert not (tmp_path / "discovery_uuid").exists()
     assert remote.cleaned_up

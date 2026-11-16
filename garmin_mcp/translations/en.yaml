@@ -59,8 +59,8 @@ configuration:
   login_notification:
     name: Login notification
     description: >-
-      Show a Home Assistant notification if the Garmin login stops working (e.g. password
-      changed) and the app could not fix it by itself.
+      Show a repair notice in Home Assistant if the Garmin login stops working (e.g.
+      password changed) and the app could not fix it by itself.
   log_level:
     name: Log level
     description: >-

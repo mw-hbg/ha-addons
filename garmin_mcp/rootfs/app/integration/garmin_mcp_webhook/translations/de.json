@@ -2,7 +2,8 @@
   "config": {
     "abort": {
       "already_configured": "Bereits eingerichtet.",
-      "single_instance_allowed": "Bereits eingerichtet."
+      "invalid_discovery": "Die App Garmin Connect MCP hat ungültige Einstellungen geschickt.",
+      "set_up_by_app": "Diese Integration richtet die App Garmin Connect MCP automatisch ein. Installiere und starte stattdessen die App."
     }
   },
   "issues": {
@@ -16,6 +17,10 @@
           }
         }
       }
+    },
+    "garmin_login": {
+      "title": "Garmin Connect MCP: Garmin-Anmeldung nicht mehr gültig",
+      "description": "Die Anmeldung der App Garmin Connect MCP bei Garmin Connect ist nicht mehr gültig – dein KI-Assistent kann nicht auf deine Garmin-Daten zugreifen. Öffne **Garmin MCP** in der Seitenleiste und melde dich neu an. Dieser Hinweis verschwindet danach von selbst."
     }
   },
   "removal": {

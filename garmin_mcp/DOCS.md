@@ -71,12 +71,13 @@ usually already the case. Without it, writing fails with HTTP 412.
 
 ### 3. Restart Home Assistant once
 
-On first start the app installs its helper integration. The app page
-then shows **“Home Assistant must be restarted once”** with a button to do so
-(a notification appears as well). After the restart the status changes to
-**Active** – nothing else to set up. When a later app update brings a new
-version of the helper integration, Home Assistant shows a **repair notice**
-(*Settings → Repairs*) with a button to restart, just like HACS does.
+On first start the app copies its helper integration into Home Assistant. The app page
+then shows **“Home Assistant must be restarted once”**: restart via *Settings →
+System → Restart*. After the restart Home Assistant sets the integration up by itself
+(the app announces its settings through Home Assistant's official app discovery) and
+the status changes to **Active** – nothing else to set up. When a later app update
+brings a new version of the helper integration, Home Assistant shows a **repair
+notice** (*Settings → Repairs*) with a button to restart, just like HACS does.
 
 Requirement: Home Assistant must already be reachable from the internet over
 HTTPS (Nabu Casa, Cloudflare Tunnel, reverse proxy, …). The app uses the
@@ -129,20 +130,26 @@ Copy the **Connector URL** from the app page. It looks like
 * **Treat the connector URL like a password.** Anyone who knows it can use your
   Garmin account through the enabled tools. Don't share screenshots or logs that
   contain it. If it leaks, click **Generate new secret URL** on the app page.
-* **What the app may access in Home Assistant:** it writes only the helper
-  integration (`custom_components/garmin_mcp_webhook`) and its settings file
-  (`.garmin_mcp_webhook.json`) into the configuration folder, and uses the
-  Home Assistant API only to set up that integration, to show the restart
-  notification and – when you click the button – to restart Home Assistant. It
-  does not read or change anything else. The helper integration additionally asks the
-  Supervisor every 10 minutes whether the app is still installed, to remove itself after
-  an uninstall. With `remote_access: direct` it does
-  not touch the configuration folder at all.
-* **The AI cannot reach your files:** file tools (upload a course, download an
-  activity) only work inside the app's own download folder. The MCP server gets no
-  access to Home Assistant and runs as an unprivileged user: it can write only its
-  Garmin tokens and downloads – not the Home Assistant configuration folder, not the
-  app's secrets and not the app page.
+* **The app has no access to Home Assistant's API** – it cannot read, switch or
+  change anything in Home Assistant. Its only access is the configuration folder,
+  and only for one thing: copying the helper integration into
+  `custom_components/garmin_mcp_webhook` (and removing it again in direct mode).
+  Home Assistant cannot map a single folder, so the whole folder is mapped; only the
+  app's internal part uses it, which is not reachable from outside.
+* **Settings travel through the official discovery service** of the Supervisor:
+  the app announces the webhook id and its internal address, Home Assistant sets up
+  the integration from it. In return, the integration reports to the app every
+  minute (internal network only, protected by the secret path and a key): your
+  external address and language for the app page, and it asks for the Garmin login
+  state to show a repair notice. Nothing in this exchange can change Home Assistant.
+* **From the internet** only the MCP endpoint is reachable (through the webhook or
+  your own hostname). It only runs Garmin tools – there is no path from it to Home
+  Assistant or to the app page.
+* **The MCP server is locked in:** it runs as an unprivileged user and additionally
+  restricts itself with the Linux kernel's *Landlock*: it can reach only its own
+  folders (Garmin tokens, downloads) – not the Home Assistant configuration folder
+  (not even to read), not the app's secrets and not the app page. File tools
+  (upload a course, download an activity) only work inside the download folder.
 * **Choose the write access level deliberately** (see below). `read_only` is the
   safest; `create_only` (default) never deletes or overwrites anything.
 * **Optional extra layer – IP allow list:** if you only use one AI service, you
@@ -164,16 +171,17 @@ Each failed check comes with a hint what to do.
 
 ## Notifications
 
-* **Restart required** – after installing, and after updates of the helper
-  integration (banner on the app page, notification, repair notice).
-* **Garmin login no longer valid** – e.g. when the tokens expired after about
-  six months or were revoked. Temporary errors (no internet after a power cut,
-  Garmin down) are fixed by the app itself by retrying; only if that does not help,
-  Home Assistant shows a notification (can be switched off with
-  `login_notification`). Then log in again on the app page. The AI app gets a clear
-  message instead of an error.
+Shown by the helper integration as **repair notices** (*Settings → Repairs*), in the
+Home Assistant language:
 
-Notifications use the Home Assistant language (*Settings → System → General*).
+* **Restart required** – after updates of the helper integration (with a restart
+  button). After the first installation the app page shows the hint.
+* **Garmin login no longer valid** – e.g. when the tokens expired after about six
+  months or were revoked. Temporary errors (no internet after a power cut, Garmin
+  down) are fixed by the app itself by retrying; only if that does not help, the
+  notice appears (can be switched off with `login_notification`). Log in again on the
+  app page – the notice then disappears by itself. The AI app gets a clear message
+  instead of an error.
 
 ## Language
 
@@ -214,7 +222,7 @@ restarting the app; the app page then shows how many tools are active.
 | `remote_access` | `webhook` (default) – reachable through your existing Home Assistant address, needs one Home Assistant restart. `direct` – you route your own HTTPS hostname to port 8100; switching to it removes the helper integration automatically. |
 | `public_url` | Optional, usually empty. Your public Home Assistant address (webhook) or your own hostname (direct), only used to show the connector URL and for the connection test. Only scheme and host are used, so a copied browser address works too. The app page warns if it is invalid or uses `http://`. |
 | `keep_downloads_days` | Activity files (FIT/GPX) the AI downloads are deleted after this many days (default 7, `0` = never). Downloads are never part of a Home Assistant backup. |
-| `login_notification` | `true` (default): Home Assistant notification if the Garmin login stops working and the app could not fix it by retrying. |
+| `login_notification` | `true` (default): repair notice in Home Assistant if the Garmin login stops working and the app could not fix it by retrying. |
 | `log_level` | `debug`, `info` (default), `warning`, `error`. Only `debug` also logs every single MCP request. |
 
 `tool_areas`, `write_access`, `enable_tools` and `disable_tools` are ignored as soon as you
@@ -252,26 +260,26 @@ changes an existing activity and therefore needs `enable_tools` with `create_onl
 | Writing workouts fails with HTTP 412 | Upload consent missing: Garmin Connect → Settings → Privacy settings → Data → *Upload device data*. |
 | Asked for a code at login | Two-factor authentication is enabled – enter the code Garmin sent you. |
 | AI app asks to log in to Home Assistant when adding the connector | Comes from ha-mcp (if installed), see step 4. Confirm it. |
-| Status stays *Home Assistant must be restarted once* | Restart Home Assistant (button on the app page or *Settings → System → Restart*). |
+| Status stays *Home Assistant must be restarted once* | Restart Home Assistant (*Settings → System → Restart*). If it stays after the restart, check *Settings → System → Logs* for `garmin_mcp_webhook`. |
 | Connector shows *couldn't reach the server* | Check that Home Assistant is reachable from outside, that the URL contains the current secret, and any firewall/WAF rules. |
 | The AI says the tool does not exist | It is disabled by `tool_areas`, `write_access` or `disable_tools`. |
 
 ## Uninstalling
 
-Just uninstall the app. Home Assistant runs no code of an app when it is uninstalled,
-so the helper integration cleans up after itself: every 10 minutes it asks the
-Supervisor whether the app is still installed. Once the app is gone (two checks in a
-row, so after 10–20 minutes), it removes its entry under *Devices & services*, deletes
-`custom_components/garmin_mcp_webhook` and `.garmin_mcp_webhook.json` and shows a
-notification. No restart is needed. If Home Assistant is off at the time, this happens
-after the next start.
+Just uninstall the app. The Supervisor then withdraws the app's announcement and Home
+Assistant removes the integration's entry under *Devices & services* by itself – the
+webhook is gone immediately. The helper integration then deletes its folder
+`custom_components/garmin_mcp_webhook` and shows a notification. No restart is needed.
 
-Nothing is removed while the app is only stopped, or if the Supervisor cannot be asked.
+If Home Assistant was off during the uninstall, the helper notices it after the next
+start: every 10 minutes it asks the Supervisor whether the app is still installed and
+removes itself once the app is missing in two checks in a row. Nothing is removed while
+the app is only stopped, or if the Supervisor cannot be asked.
 
 To remove the integration by hand instead: *Settings → Devices & services → Garmin
 Connect MCP (remote access) → Delete*, then delete the folder
-`custom_components/garmin_mcp_webhook` and the file `.garmin_mcp_webhook.json` from your
-configuration folder and restart Home Assistant.
+`custom_components/garmin_mcp_webhook` from your configuration folder and restart Home
+Assistant.
 
 ## Credits and licenses
 
