@@ -697,7 +697,7 @@ TEXT = {
         "title": "Garmin Connect MCP",
         "account": "Garmin account",
         "connected_as": "Connected as",
-        "not_connected": "Not connected yet. Log in once – your password is not stored, only the access tokens Garmin issues (valid for about six months).",
+        "not_connected": "Not connected yet. Log in once – your password is not stored, only the access tokens Garmin issues (valid for about six months). Two-factor authentication is supported: if it is enabled, you will be asked for the code.",
         "email": "E-mail",
         "password": "Password",
         "login": "Log in",
@@ -744,6 +744,8 @@ TEXT = {
         "ok_logout": "Logged out. Tokens deleted.",
         "ok_rotate": "New secret URL generated. Update your connectors.",
         "ok_restart": "Home Assistant is restarting. Reload this page in a minute.",
+        "upload_hint": "To let the AI create workouts on your watch, Garmin needs your consent to data uploads (required for EU accounts): Garmin Connect → Settings → Privacy settings → Data → “Upload device data” must be on. If your watch already syncs to Garmin Connect, this is usually already the case.",
+        "oauth_hint": "If you also use the ha-mcp add-on with its webhook proxy, your AI app may ask you to log in to your Home Assistant and grant access when adding the connector. That comes from ha-mcp and is harmless – just confirm it.",
         "remote": "Remote access",
         "remote_active": "Active – via your Home Assistant address",
         "remote_setting_up": "Setting up …",
@@ -759,7 +761,7 @@ TEXT = {
         "title": "Garmin Connect MCP",
         "account": "Garmin-Konto",
         "connected_as": "Verbunden als",
-        "not_connected": "Noch nicht verbunden. Melde dich einmal an – dein Passwort wird nicht gespeichert, nur die Zugangstokens von Garmin (gültig ca. sechs Monate).",
+        "not_connected": "Noch nicht verbunden. Melde dich einmal an – dein Passwort wird nicht gespeichert, nur die Zugangstokens von Garmin (gültig ca. sechs Monate). Zwei-Faktor-Anmeldung wird unterstützt: Ist sie aktiv, wirst du nach dem Code gefragt.",
         "email": "E-Mail",
         "password": "Passwort",
         "login": "Anmelden",
@@ -806,6 +808,8 @@ TEXT = {
         "ok_logout": "Abgemeldet. Tokens gelöscht.",
         "ok_rotate": "Neue geheime URL erzeugt. Passe deine Connectors an.",
         "ok_restart": "Home Assistant startet neu. Lade diese Seite in einer Minute neu.",
+        "upload_hint": "Damit die KI Workouts auf deine Uhr bringen kann, braucht Garmin deine Zustimmung zum Hochladen (Pflicht bei EU-Konten): Garmin Connect → Einstellungen → Datenschutzeinstellungen → Daten → „Gerätedaten hochladen“ muss aktiv sein. Synchronisiert deine Uhr schon mit Garmin Connect, ist das meist bereits der Fall.",
+        "oauth_hint": "Nutzt du zusätzlich das Add-on ha-mcp mit seinem Webhook-Proxy, fragt deine KI-App beim Hinzufügen des Connectors eventuell nach einer Anmeldung bei deinem Home Assistant und einer Zugriffsfreigabe. Das kommt von ha-mcp und ist unbedenklich – einfach bestätigen.",
         "remote": "Fernzugriff",
         "remote_active": "Aktiv – über deine Home-Assistant-Adresse",
         "remote_setting_up": "Wird eingerichtet …",
@@ -918,7 +922,8 @@ async def index(request: Request) -> Response:
         name = html.escape(account.get("name") or "–")
         parts.append(
             f'<p>{t["connected_as"]} <b>{name}</b></p>'
-            f'<form method="post" action="logout" onsubmit="return confirm(\'{t["logout_confirm"]}\')">{csrf}'
+            + (f'<p class="muted">{t["upload_hint"]}</p>' if services.options.get("write_access") != "read_only" else "")
+            + f'<form method="post" action="logout" onsubmit="return confirm(\'{t["logout_confirm"]}\')">{csrf}'
             f'<button type="submit" class="secondary">{t["logout"]}</button></form>'
         )
     else:
@@ -974,7 +979,8 @@ async def index(request: Request) -> Response:
         parts.append(
             f'<label>{t["connector_url"]}</label>{_secret_field("url", url, t)}'
             + ("" if base else f'<p class="muted">{t["no_base_url"]}</p>')
-            + f'<p class="warn">{t["secret_warning"]}</p><p>{t["steps"]}</p>{rotate_form}'
+            + f'<p class="warn">{t["secret_warning"]}</p><p>{t["steps"]}</p>'
+            f'<p class="muted">{t["oauth_hint"]}</p>{rotate_form}'
         )
     else:
         parts.append(

@@ -43,6 +43,17 @@ Voraussetzung: Home Assistant ist bereits von außen per HTTPS erreichbar
 (Nabu Casa, Cloudflare-Tunnel, Reverse Proxy …). Einen zusätzlichen Hostnamen
 oder Tunnel braucht es nicht.
 
+Gut zu wissen:
+
+* **Zwei-Faktor-Anmeldung** bei Garmin wird unterstützt – das Add-on fragt beim
+  Anmelden nach dem Code.
+* **Workouts auf die Uhr (EU-Konten):** Garmin braucht deine Zustimmung zum
+  Hochladen: Garmin Connect → *Einstellungen → Datenschutzeinstellungen → Daten →
+  Gerätedaten hochladen* muss aktiv sein.
+* **Nutzt du auch ha-mcp?** Dann fragt deine KI-App beim Hinzufügen des
+  Connectors eventuell nach einer Anmeldung bei Home Assistant. Das kommt von
+  ha-mcp und ist unbedenklich.
+
 Ausführliche Anleitung (Englisch): [DOCS.md](DOCS.md),
 auch im Tab *Dokumentation* des Add-ons.
 

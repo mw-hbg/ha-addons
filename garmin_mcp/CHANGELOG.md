@@ -6,6 +6,8 @@
   only accept GET, HEAD, POST and PUT.
 - After an update of the helper integration the add-on page now asks for the required
   Home Assistant restart instead of retrying the old code.
+- Hints on the add-on page and in the docs: Garmin upload consent ("Upload device data"),
+  two-factor authentication, and the sign-in prompt that appears when ha-mcp is installed.
 
 ## 0.2.0
 

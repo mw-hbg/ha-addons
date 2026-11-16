@@ -40,6 +40,16 @@ without any third-party service in between.
 4. Restart Home Assistant once when the add-on page asks for it.
 5. Add the connector URL shown on the add-on page to your AI assistant.
 
+Good to know:
+
+* **Two-factor authentication** on your Garmin account is supported – the add-on
+  asks for the code during login.
+* **Workouts on your watch (EU accounts):** Garmin needs your consent to data
+  uploads: Garmin Connect → *Settings → Privacy settings → Data → Upload device
+  data* must be on.
+* **Using ha-mcp too?** Your AI app may then ask you to log in to Home Assistant
+  when adding the connector. That comes from ha-mcp and is harmless.
+
 Full instructions: [DOCS.md](DOCS.md) (also shown in the
 add-on's *Documentation* tab).
 

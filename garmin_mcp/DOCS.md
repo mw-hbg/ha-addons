@@ -48,9 +48,17 @@ Install the add-on, start it and open **Garmin MCP** in the sidebar
 Enter your Garmin e-mail and password. If two-factor authentication is enabled,
 Garmin sends you a code – enter it on the next screen.
 
-**EU accounts:** to create workouts, Garmin requires your consent to data
-uploads. If writing fails with HTTP 412, grant that consent in the privacy /
-data settings of Garmin Connect and try again.
+**Two-factor authentication** is supported. If it is enabled for your Garmin
+account, Garmin sends you a code (app, e-mail or SMS) and the add-on asks for
+it on the next screen. You only need it at login – not for every request.
+After about six months the tokens expire; then simply log in again.
+
+**Data upload consent (EU accounts):** to create workouts and send them to your
+watch, Garmin requires your consent to data uploads. In Garmin Connect go to
+*Settings → Privacy settings → Data* and make sure **Upload device data** is
+switched on (menu names can differ slightly between app versions and
+languages). If your watch already syncs activities to Garmin Connect, this is
+usually already the case. Without it, writing fails with HTTP 412.
 
 ### 3. Restart Home Assistant once
 
@@ -93,6 +101,12 @@ Copy the **Connector URL** from the add-on page. It looks like
 * **ChatGPT**: add it as a custom connector / remote MCP server (developer mode).
 * **Other clients** (Cursor, VS Code, Gemini CLI, Open WebUI, …): add a remote
   MCP server using the *Streamable HTTP* transport and the URL.
+
+> **Using ha-mcp as well?** If the [ha-mcp](https://github.com/homeassistant-ai/ha-mcp)
+> add-on with its webhook proxy (OAuth) runs on the same Home Assistant, your
+> AI app may ask you to log in to your Home Assistant and grant access when
+> you add this connector. That prompt comes from ha-mcp's sign-in for your
+> domain and is harmless – confirm it. This add-on itself needs no sign-in.
 
 ## Security
 
@@ -152,7 +166,9 @@ disable_tools: []
 |---|---|
 | Status *Garmin login failed* | Tokens expired or were revoked. Log out on the add-on page and log in again. |
 | *Too many requests* during login | Garmin rate-limits logins. Wait a few minutes. |
-| Writing workouts fails with HTTP 412 | EU upload consent missing, see step 2. |
+| Writing workouts fails with HTTP 412 | Upload consent missing: Garmin Connect → Settings → Privacy settings → Data → *Upload device data*. |
+| Asked for a code at login | Two-factor authentication is enabled – enter the code Garmin sent you. |
+| AI app asks to log in to Home Assistant when adding the connector | Comes from ha-mcp (if installed), see step 4. Confirm it. |
 | Status stays *Home Assistant must be restarted once* | Restart Home Assistant (button on the add-on page or *Settings → System → Restart*). |
 | Connector shows *couldn't reach the server* | Check that Home Assistant is reachable from outside, that the URL contains the current secret, and any firewall/WAF rules. |
 | The AI says the tool does not exist | It is disabled by `tool_areas`, `write_access` or `disable_tools`. |
