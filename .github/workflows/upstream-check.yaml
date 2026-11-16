@@ -1,0 +1,37 @@
+name: Check for a new Garmin server version
+
+# Once a week: is there a newer commit of Taxuspt/garmin_mcp than the one the
+# add-on is pinned to? If so, open (or update) an issue. Updating stays a
+# deliberate step: bump UPSTREAM_REF in garmin_mcp/Dockerfile, let the tests
+# run, then release.
+on:
+  schedule:
+    - cron: "17 6 * * 1"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  issues: write
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - name: Compare pinned and latest version
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          pinned=$(grep -oP '^ARG UPSTREAM_REF=\K\S+' garmin_mcp/Dockerfile)
+          latest=$(gh api repos/Taxuspt/garmin_mcp/commits/main --jq .sha)
+          echo "pinned=$pinned latest=$latest"
+          [ "$pinned" = "$latest" ] && { echo "Up to date"; exit 0; }
+          ahead=$(gh api "repos/Taxuspt/garmin_mcp/compare/${pinned}...${latest}" --jq .ahead_by)
+          title="Garmin server update available"
+          body=$(printf 'The Garmin MCP server has **%s** new commit(s) since the pinned version.\n\n- pinned: `%s`\n- latest: `%s`\n- changes: https://github.com/Taxuspt/garmin_mcp/compare/%s...%s\n\nTo update: set `UPSTREAM_REF` in `garmin_mcp/Dockerfile` to the latest commit, check that the tests pass, add a changelog entry and run the Release workflow.' "$ahead" "$pinned" "$latest" "$pinned" "$latest")
+          existing=$(gh issue list --state open --search "\"$title\" in:title" --json number --jq '.[0].number')
+          if [ -n "$existing" ]; then
+            gh issue edit "$existing" --body "$body"
+          else
+            gh issue create --title "$title" --body "$body"
+          fi

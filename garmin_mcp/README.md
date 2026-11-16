@@ -116,13 +116,21 @@ The connector URL changes when you switch – update it in your AI app.
 
 ## Development
 
-To test changes locally, copy the `garmin_mcp` folder to `/addons/` on your Home
-Assistant host, remove the `image:` line from `config.yaml` and install it from
-*Local add-ons* – Home Assistant then builds the image itself.
-
-Releases: bump `version` in `garmin_mcp/config.yaml` (only right before releasing), add a `CHANGELOG.md`
-entry and publish a GitHub release `vX.Y.Z`. GitHub Actions builds and pushes
-the images.
+* **Local testing:** copy the `garmin_mcp` folder to `/addons/` on your Home
+  Assistant host, remove the `image:` line from `config.yaml` and install it
+  from *Local add-ons* – Home Assistant then builds the image itself.
+* **Tests:** `pytest tests` (unit tests for the launcher and the helper
+  integration); every push also builds both images and runs a smoke test of
+  the container (`tests/smoke_test.sh`).
+* **Changes:** add an entry under `## Unreleased` in `CHANGELOG.md`. Never
+  change `version` in `config.yaml` by hand.
+* **Releases:** *Actions → Release → Run workflow* with the new version. The
+  workflow builds and pushes the images first, then sets the version,
+  finishes the changelog, tags and publishes the release – so Home Assistant
+  only offers an update once its images exist.
+* **Garmin server updates:** a weekly check opens an issue when
+  [Taxuspt/garmin_mcp](https://github.com/Taxuspt/garmin_mcp) has new commits.
+  Update `UPSTREAM_REF` in the `Dockerfile` deliberately and let the tests run.
 
 ## Credits and license
 

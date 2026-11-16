@@ -1,0 +1,54 @@
+name: Bug report / Fehlerbericht
+description: Something does not work as expected.
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for reporting! **Never post your connector URL, the secret path or Garmin login data.**
+        Danke für die Meldung! **Niemals die Connector-URL, den geheimen Pfad oder Garmin-Zugangsdaten posten.**
+  - type: input
+    id: addon_version
+    attributes:
+      label: Add-on version
+      placeholder: "0.3.0"
+    validations:
+      required: true
+  - type: input
+    id: ha_version
+    attributes:
+      label: Home Assistant version / installation type
+      placeholder: "2026.11.2, Home Assistant OS on Raspberry Pi 5"
+    validations:
+      required: true
+  - type: dropdown
+    id: remote
+    attributes:
+      label: Remote access
+      options:
+        - webhook (default) via Nabu Casa
+        - webhook (default) via Cloudflare Tunnel / reverse proxy
+        - direct (own hostname)
+    validations:
+      required: true
+  - type: input
+    id: ai_app
+    attributes:
+      label: AI app
+      placeholder: "Claude (web), ChatGPT, …"
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened? What did you expect?
+    validations:
+      required: true
+  - type: textarea
+    id: test
+    attributes:
+      label: Result of "Test connection" on the add-on page
+  - type: textarea
+    id: log
+    attributes:
+      label: Add-on log (Log tab)
+      description: Check that it contains no personal data before posting.
+      render: text

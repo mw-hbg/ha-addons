@@ -1,5 +1,14 @@
 # Changelog
 
+## Unreleased
+
+- Automated tests for every change: unit tests (tool protection, selection, texts, helper
+  integration) and a smoke test of the built image.
+- New release process: images are published before the version number changes, so Home
+  Assistant never offers an update whose image is not available yet.
+- Weekly check for new versions of the Garmin server; Dependabot keeps build tools up to date.
+- SECURITY.md and issue templates.
+
 ## 0.3.0
 
 Fixes

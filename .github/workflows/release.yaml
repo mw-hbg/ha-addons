@@ -1,0 +1,108 @@
+name: Release
+
+# Actions → Release → "Run workflow", enter the new version (e.g. 0.4.0).
+#
+# Order matters: the images are built and pushed FIRST. Only then is the
+# version in config.yaml raised – that is the moment Home Assistant offers
+# the update, so an update can never point to an image that doesn't exist yet.
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "New version, e.g. 0.4.0"
+        required: true
+        type: string
+
+permissions:
+  contents: write
+  packages: write
+
+concurrency:
+  group: release
+  cancel-in-progress: false
+
+jobs:
+  prepare:
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.check.outputs.version }}
+      owner: ${{ steps.check.outputs.owner }}
+    steps:
+      - uses: actions/checkout@v7
+      - name: Check version and changelog
+        id: check
+        run: |
+          version="${{ inputs.version }}"
+          version="${version#v}"
+          if ! [[ "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "::error::Version must look like 1.2.3"; exit 1
+          fi
+          current=$(yq -r '.version' garmin_mcp/config.yaml)
+          if [ "$(printf '%s\n%s\n' "$current" "$version" | sort -V | tail -1)" != "$version" ] || [ "$current" = "$version" ]; then
+            echo "::error::$version is not higher than the current version $current"; exit 1
+          fi
+          if git ls-remote --exit-code --tags origin "v$version" >/dev/null; then
+            echo "::error::Tag v$version already exists"; exit 1
+          fi
+          if ! grep -q '^## Unreleased' garmin_mcp/CHANGELOG.md; then
+            echo "::error::garmin_mcp/CHANGELOG.md has no '## Unreleased' section"; exit 1
+          fi
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          echo "owner=$(echo '${{ github.repository_owner }}' | tr '[:upper:]' '[:lower:]')" >> "$GITHUB_OUTPUT"
+
+  images:
+    needs: prepare
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: true
+      matrix:
+        include:
+          - arch: amd64
+            platform: linux/amd64
+          - arch: aarch64
+            platform: linux/arm64
+    steps:
+      - uses: actions/checkout@v7
+      - uses: docker/setup-qemu-action@v4
+      - uses: docker/setup-buildx-action@v4
+      - uses: docker/login-action@v4
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - name: Build and push ${{ matrix.arch }}
+        uses: docker/build-push-action@v7
+        with:
+          context: ./garmin_mcp
+          platforms: ${{ matrix.platform }}
+          push: true
+          build-args: |
+            BUILD_VERSION=${{ needs.prepare.outputs.version }}
+            BUILD_ARCH=${{ matrix.arch }}
+          tags: |
+            ghcr.io/${{ needs.prepare.outputs.owner }}/${{ matrix.arch }}-addon-garmin-mcp:${{ needs.prepare.outputs.version }}
+            ghcr.io/${{ needs.prepare.outputs.owner }}/${{ matrix.arch }}-addon-garmin-mcp:latest
+          cache-from: type=gha,scope=${{ matrix.arch }}
+          cache-to: type=gha,mode=max,scope=${{ matrix.arch }}
+
+  publish:
+    needs: [prepare, images]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - name: Set version, finish changelog, tag and release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          VERSION: ${{ needs.prepare.outputs.version }}
+        run: |
+          sed -i "s/^version: .*/version: \"$VERSION\"/" garmin_mcp/config.yaml
+          sed -i "0,/^## Unreleased/s//## $VERSION/" garmin_mcp/CHANGELOG.md
+          # Release notes = this version's changelog section
+          awk -v v="## $VERSION" '$0==v{f=1;next} /^## /{if(f)exit} f' garmin_mcp/CHANGELOG.md > notes.md
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add garmin_mcp/config.yaml garmin_mcp/CHANGELOG.md
+          git commit -m "Release $VERSION"
+          git tag "v$VERSION"
+          git push origin HEAD "v$VERSION"
+          gh release create "v$VERSION" --title "v$VERSION" --notes-file notes.md --latest
