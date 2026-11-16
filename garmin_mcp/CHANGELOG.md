@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.2.1
+
+- Fix: remote access failed to start ("Unexpected method: DELETE"); Home Assistant webhooks
+  only accept GET, HEAD, POST and PUT.
+- After an update of the helper integration the add-on page now asks for the required
+  Home Assistant restart instead of retrying the old code.
+
 ## 0.2.0
 
 - New default: remote access through your existing Home Assistant address via a webhook –

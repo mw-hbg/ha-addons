@@ -423,6 +423,10 @@ class RemoteAccess:
         self._wake = threading.Event()
         self._config_changed = True
         self._base_url_cache: tuple[float, str] = (0.0, "")
+        # Set when the integration code was updated while HA already had it
+        # loaded: Python modules only reload with a Home Assistant restart.
+        self.pending_restart = False
+        self._saw_ha_down = False
 
     # files ---------------------------------------------------------------
     def _install_component(self) -> bool:
@@ -500,7 +504,9 @@ class RemoteAccess:
             log.error("Remote access: %s", self.detail)
             return
         try:
-            self._install_component()
+            was_installed = (COMPONENT_DST / "manifest.json").exists()
+            if self._install_component() and was_installed:
+                self.pending_restart = True
         except OSError as exc:
             self.state, self.detail = "error", str(exc)
             log.error("Remote access: could not install integration: %s", exc)
@@ -517,8 +523,19 @@ class RemoteAccess:
         self._write_config()
         entry, api_ok = self._entry()
         if not api_ok:
+            self._saw_ha_down = True
             self.state, self.detail = "setting_up", "Home Assistant API not reachable"
             return
+        if self.pending_restart:
+            if self._saw_ha_down:
+                self.pending_restart = False
+                self._config_changed = True
+            else:
+                if self.state != "restart_needed":
+                    log.info("Remote access: integration updated – Home Assistant must be restarted once")
+                    self._notify_restart()
+                self.state = "restart_needed"
+                return
         if entry is None:
             if self._create_entry():
                 log.info("Remote access: integration set up")

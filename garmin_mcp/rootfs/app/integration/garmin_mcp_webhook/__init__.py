@@ -81,7 +81,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         "Garmin Connect MCP",
         webhook_id,
         handle,
-        allowed_methods=["POST", "GET", "DELETE"],
+        allowed_methods=["POST", "GET"],
     )
     hass.data.setdefault(DOMAIN, {})[entry.entry_id] = {
         "webhook_id": webhook_id,
