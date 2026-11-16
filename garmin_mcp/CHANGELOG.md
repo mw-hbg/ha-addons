@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.4.0
 
 **After updating:** restart Home Assistant once (the app page and a repair notice ask for it)
 and generate a new secret URL on the app page (**Generate new secret URL**), then replace it
