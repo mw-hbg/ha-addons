@@ -1,0 +1,305 @@
+# Garmin Connect MCP
+
+This add-on runs an [MCP](https://modelcontextprotocol.io) server for your
+Garmin Connect account inside Home Assistant. AI assistants that support remote
+MCP servers – Claude, ChatGPT and many others – can then read your training and
+health data and, if you allow it, create workouts and schedule them on your
+watch.
+
+> **Unofficial.** This project is not affiliated with or endorsed by Garmin.
+> Garmin offers no public API for individuals, so the add-on uses the same
+> private endpoints as the Garmin Connect website (via
+> [python-garminconnect](https://github.com/cyberjunky/python-garminconnect)).
+> Garmin may change or block this at any time. Use at your own risk.
+
+## How it works
+
+```
+AI assistant ──HTTPS──► your tunnel / reverse proxy ──► add-on :8100 ──► Garmin Connect
+                                                         (secret path)
+```
+
+* The MCP server itself listens on loopback only.
+* An nginx in front of it only forwards requests whose URL contains a long
+  random **secret path**. Every other request gets a `404`.
+* The add-on page (sidebar → **Garmin MCP**) is only reachable through Home
+  Assistant and only for administrators.
+* Your Garmin password is never stored. After logging in, only the OAuth tokens
+  Garmin issues are kept in the add-on's private storage (valid for about six
+  months).
+
+## Setup
+
+### 1. Install and start
+
+Install the add-on, start it and open **Garmin MCP** in the sidebar
+(or **Open Web UI** on the add-on page).
+
+### 2. Log in to Garmin Connect
+
+Enter your Garmin e-mail and password. If two-factor authentication is enabled,
+Garmin sends you a code – enter it on the next screen.
+
+**EU accounts:** to create workouts, Garmin requires your consent to data
+uploads. If writing fails with HTTP 412, grant that consent in the privacy /
+data settings of Garmin Connect and try again.
+
+### 3. Make the endpoint reachable over HTTPS
+
+AI assistants call MCP servers from the internet, so the add-on needs a public
+**HTTPS** address. Do **not** forward port 8100 on your router without HTTPS.
+
+**Cloudflared add-on (Cloudflare Tunnel)** – add an entry to
+`additional_hosts` in its configuration. The add-on page shows the exact target
+address (*Target for your tunnel / reverse proxy*), for example:
+
+```yaml
+additional_hosts:
+  - hostname: garmin.example.com
+    service: http://abcd1234-garmin-mcp:8100
+```
+
+**Nginx Proxy Manager, Traefik, Caddy, …** – proxy a hostname to the same
+target address. Disable response buffering for it if your proxy supports that.
+
+Then enter the public address (e.g. `https://garmin.example.com`) in the add-on
+option **Public base URL**, so the add-on page shows you the complete connector
+URL.
+
+### 4. Connect your AI assistant
+
+Copy the **Connector URL** from the add-on page. It looks like
+`https://garmin.example.com/<secret>/mcp`.
+
+* **Claude** (claude.ai, desktop, mobile): *Settings → Connectors → Add custom
+  connector*, paste the URL, no authentication.
+* **ChatGPT**: add it as a custom connector / remote MCP server (developer mode).
+* **Other clients** (Cursor, VS Code, Gemini CLI, Open WebUI, …): add a remote
+  MCP server using the *Streamable HTTP* transport and the URL.
+
+## Security
+
+* **Treat the connector URL like a password.** Anyone who knows it can use your
+  Garmin account through the enabled tools. Don't share screenshots or logs that
+  contain it. If it leaks, click **Generate new secret URL** on the add-on page.
+* **Choose the write access level deliberately** (see below). `read_only` is the
+  safest; `create_only` (default) never deletes or overwrites anything.
+* **Optional extra layer – IP allow list:** if you only use one AI service, you
+  can restrict the public hostname to that service's IP ranges, e.g. with a
+  Cloudflare WAF rule. Claude connects from `160.79.104.0/21` (see Anthropic's
+  published IP addresses). Other AI services use other ranges and would be
+  blocked by such a rule. Test after enabling it.
+
+## Configuration
+
+| Option | Description |
+|---|---|
+| `tool_areas` | Which areas the AI may use: `all` (default), `minimal`, `health`, `activities`, `workouts`, `training`, `nutrition`. Several can be combined. Fewer tools keep the AI faster and more focused. |
+| `write_access` | `read_only` – reading only. `create_only` (default) – may also create and schedule workouts, send them to the watch and add entries (weigh-ins, hydration, food logs …), but never delete or overwrite. `full` – also delete and edit (activities, workouts, weigh-ins, courses, …). |
+| `enable_tools` | Individual tools to allow although `write_access` or `tool_areas` would exclude them, e.g. `set_perceived_effort` or `push_workout_to_device`. |
+| `disable_tools` | Individual tools that are never available, e.g. `delete_activity`. Always wins. |
+| `public_url` | Optional public base URL, only used to display the connector URL. |
+| `log_level` | `debug`, `info` (default), `warning`, `error`. |
+
+Changes take effect after restarting the add-on. The add-on page shows how many
+tools are active.
+
+> Tip: `push_workout_to_device` and the device tools are only part of `all`.
+> If you pick specific areas, add them via `enable_tools` when you need them.
+
+### Example: training coach without delete rights
+
+```yaml
+tool_areas:
+  - activities
+  - training
+  - workouts
+write_access: create_only
+enable_tools:
+  - push_workout_to_device
+  - set_perceived_effort
+disable_tools: []
+```
+
+## Troubleshooting
+
+| Problem | Solution |
+|---|---|
+| Status *Garmin login failed* | Tokens expired or were revoked. Log out on the add-on page and log in again. |
+| *Too many requests* during login | Garmin rate-limits logins. Wait a few minutes. |
+| Writing workouts fails with HTTP 412 | EU upload consent missing, see step 2. |
+| Connector shows *couldn't reach the server* | Check the tunnel/proxy target, that the URL contains the current secret, and any firewall/WAF rules. |
+| The AI says the tool does not exist | It is disabled by `tool_areas`, `write_access` or `disable_tools`. |
+
+## Credits and licenses
+
+The MCP server is [Taxuspt/garmin_mcp](https://github.com/Taxuspt/garmin_mcp)
+(MIT), using [python-garminconnect](https://github.com/cyberjunky/python-garminconnect)
+(MIT). See `THIRD_PARTY_NOTICES.md` in the repository.
+
+## All tools
+
+*Type*: **read** = only reads data · **create** = adds something new ·
+**delete / overwrite** = removes or changes existing data (only with
+`write_access: full`). *Areas* lists the `tool_areas` that include the tool;
+`–` means only `all`.
+
+| Tool | Type | Areas |
+|---|---|---|
+| `add_body_composition` | create | health |
+| `add_gear_to_activity` | create | activities |
+| `add_hydration_data` | create | health, nutrition |
+| `add_weigh_in` | create | health |
+| `add_weigh_in_with_timestamps` | create | health |
+| `count_activities` | read | activities |
+| `create_custom_food` | create | nutrition |
+| `create_manual_activity` | create | activities |
+| `create_run_interval_workout` | create | workouts |
+| `create_run_workout` | create | workouts |
+| `create_strength_workout` | create | workouts |
+| `create_walk_run_workout` | create | workouts |
+| `create_z2_walk_workout` | create | workouts |
+| `delete_activity` | delete / overwrite | activities |
+| `delete_course` | delete / overwrite | activities |
+| `delete_custom_food` | delete / overwrite | nutrition |
+| `delete_food_log` | delete / overwrite | nutrition |
+| `delete_weigh_ins` | delete / overwrite | health |
+| `delete_workout` | delete / overwrite | workouts |
+| `delete_workouts` | delete / overwrite | workouts |
+| `download_activity_file` | delete / overwrite | activities |
+| `download_course_gpx` | delete / overwrite | activities |
+| `download_workout` | delete / overwrite | workouts |
+| `get_acclimation` | read | training |
+| `get_activities` | read | minimal, activities |
+| `get_activities_by_date` | read | minimal, activities |
+| `get_activities_fordate` | read | activities |
+| `get_activity` | read | minimal, activities |
+| `get_activity_exercise_sets` | read | activities |
+| `get_activity_fit_data` | read | activities |
+| `get_activity_fit_messages` | read | activities |
+| `get_activity_gear` | read | activities |
+| `get_activity_hr_in_timezones` | read | activities |
+| `get_activity_power_in_timezones` | read | activities |
+| `get_activity_split_summaries` | read | activities |
+| `get_activity_splits` | read | minimal, activities |
+| `get_activity_typed_splits` | read | activities |
+| `get_activity_types` | read | activities |
+| `get_activity_weather` | read | activities |
+| `get_adhoc_challenges` | read | training |
+| `get_all_day_events` | read | health |
+| `get_all_day_stress` | read | health |
+| `get_available_badge_challenges` | read | training |
+| `get_badge_challenges` | read | training |
+| `get_blood_pressure` | read | health |
+| `get_body_battery` | read | minimal, health |
+| `get_body_battery_events` | read | health |
+| `get_body_composition` | read | health |
+| `get_calendar_events` | read | workouts |
+| `get_course_details` | read | activities |
+| `get_courses` | read | activities |
+| `get_custom_food_serving_units` | read | nutrition |
+| `get_custom_foods` | read | nutrition |
+| `get_cycling_ftp` | read | training |
+| `get_daily_steps` | read | minimal, health |
+| `get_daily_weigh_ins` | read | health |
+| `get_device_alarms` | read | – |
+| `get_device_last_used` | read | – |
+| `get_device_settings` | read | – |
+| `get_device_solar_data` | read | – |
+| `get_devices` | read | – |
+| `get_earned_badges` | read | training |
+| `get_endurance_score` | read | training |
+| `get_energy_balance` | read | health, nutrition |
+| `get_fitnessage_data` | read | health, training |
+| `get_floors` | read | health |
+| `get_full_name` | read | minimal, health, activities, workouts, training, nutrition |
+| `get_garmin_coach_workouts` | read | workouts |
+| `get_gear` | read | activities |
+| `get_goals` | read | training |
+| `get_heart_rate_zones` | read | minimal, health, activities, workouts, training, nutrition |
+| `get_heart_rates` | read | health |
+| `get_heart_rates_summary` | read | minimal, health |
+| `get_hill_score` | read | training |
+| `get_hrv_data` | read | minimal, health, training |
+| `get_hrv_trend` | read | health, training |
+| `get_hydration_data` | read | health, nutrition |
+| `get_inprogress_virtual_challenges` | read | training |
+| `get_lactate_threshold` | read | training |
+| `get_lifestyle_logging_data` | read | health |
+| `get_menstrual_calendar_data` | read | health |
+| `get_menstrual_data_for_date` | read | health |
+| `get_morning_training_readiness` | read | health, training |
+| `get_non_completed_badge_challenges` | read | training |
+| `get_nutrition_daily_food_log` | read | nutrition |
+| `get_nutrition_daily_meals` | read | nutrition |
+| `get_nutrition_daily_settings` | read | nutrition |
+| `get_nutrition_summary_between_dates` | read | nutrition |
+| `get_personal_record` | read | training |
+| `get_power_duration_curve` | read | activities, training |
+| `get_pregnancy_summary` | read | health |
+| `get_primary_training_device` | read | training |
+| `get_progress_summary_between_dates` | read | training |
+| `get_race_predictions` | read | training |
+| `get_recovery_time_remaining` | read | health, training |
+| `get_respiration_data` | read | health |
+| `get_respiration_summary` | read | health |
+| `get_respiration_trend` | read | health, training |
+| `get_rhr_day` | read | health |
+| `get_running_tolerance` | read | training |
+| `get_running_tolerance_trend` | read | training |
+| `get_scheduled_workouts` | read | workouts |
+| `get_sleep_data` | read | minimal, health |
+| `get_sleep_summary` | read | minimal, health |
+| `get_sleep_summary_range` | read | health |
+| `get_spo2_data` | read | health |
+| `get_stats` | read | minimal, health |
+| `get_stats_and_body` | read | health |
+| `get_stats_range` | read | health |
+| `get_steps_data` | read | health |
+| `get_stress_data` | read | health |
+| `get_stress_summary` | read | minimal, health |
+| `get_training_effect` | read | training |
+| `get_training_load_balance` | read | training |
+| `get_training_load_trend` | read | training |
+| `get_training_plan_workouts` | read | workouts |
+| `get_training_readiness` | read | minimal, health, training |
+| `get_training_status` | read | minimal, training |
+| `get_unit_system` | read | minimal, health, activities, workouts, training, nutrition |
+| `get_user_profile` | read | minimal, health, activities, workouts, training, nutrition |
+| `get_user_summary` | read | minimal, health |
+| `get_userprofile_settings` | read | minimal, health, activities, workouts, training, nutrition |
+| `get_vo2max_trend` | read | training |
+| `get_weekly_intensity_minutes` | read | health, training |
+| `get_weekly_steps` | read | health |
+| `get_weekly_stress` | read | health |
+| `get_weigh_ins` | read | health |
+| `get_workout_by_id` | read | workouts |
+| `get_workouts` | read | workouts |
+| `log_custom_food` | create | nutrition |
+| `log_food` | create | nutrition |
+| `push_workout_to_device` | create | – |
+| `remove_gear_from_activity` | delete / overwrite | activities |
+| `request_reload` | create | training |
+| `reschedule_workout` | delete / overwrite | – |
+| `schedule_week` | create | workouts |
+| `schedule_workout` | create | workouts |
+| `schedule_workouts` | create | workouts |
+| `search_foods` | read | nutrition |
+| `set_activity_description` | delete / overwrite | activities |
+| `set_activity_event_type` | delete / overwrite | activities |
+| `set_activity_exercise_sets` | delete / overwrite | activities |
+| `set_activity_feel` | delete / overwrite | activities |
+| `set_activity_name` | delete / overwrite | activities |
+| `set_activity_type` | delete / overwrite | activities |
+| `set_blood_pressure` | create | health |
+| `set_fit_download_dir` | create | activities |
+| `set_heart_rate_zones` | delete / overwrite | – |
+| `set_nutrition_daily_settings` | delete / overwrite | nutrition |
+| `set_perceived_effort` | delete / overwrite | activities |
+| `unschedule_workout` | delete / overwrite | workouts |
+| `unschedule_workouts` | delete / overwrite | workouts |
+| `update_custom_food` | delete / overwrite | nutrition |
+| `upload_course` | create | activities |
+| `upload_workout` | create | workouts |
+| `upload_workouts` | create | workouts |
+| `upsert_and_log` | create | nutrition |

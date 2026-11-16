@@ -1,0 +1,43 @@
+---
+name: Garmin Connect MCP
+version: "0.1.0"
+slug: garmin_mcp
+description: >-
+  MCP server for Garmin Connect – let AI assistants (Claude, ChatGPT, …)
+  read your training and health data and plan workouts on your watch.
+url: https://github.com/OWNER/ha-garmin-mcp
+# Pre-built images from GitHub Actions. Remove this line to build locally.
+image: ghcr.io/OWNER/{arch}-addon-garmin-mcp
+arch:
+  - amd64
+  - aarch64
+startup: application
+boot: auto
+ingress: true
+ingress_port: 8099
+panel_icon: mdi:run-fast
+panel_title: Garmin MCP
+panel_admin: true
+ports:
+  8100/tcp: null
+ports_description:
+  8100/tcp: >-
+    MCP endpoint (only needed without a tunnel/reverse proxy add-on; protected by the secret path)
+options:
+  tool_areas:
+    - all
+  write_access: create_only
+  enable_tools: []
+  disable_tools: []
+  public_url: ""
+  log_level: info
+schema:
+  tool_areas:
+    - "list(all|minimal|health|activities|workouts|training|nutrition)"
+  write_access: "list(read_only|create_only|full)"
+  enable_tools:
+    - "str"
+  disable_tools:
+    - "str"
+  public_url: "str?"
+  log_level: "list(debug|info|warning|error)"

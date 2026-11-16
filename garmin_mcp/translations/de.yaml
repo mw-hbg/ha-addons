@@ -1,0 +1,35 @@
+---
+configuration:
+  tool_areas:
+    name: Bereiche
+    description: >-
+      Welche Bereiche von Garmin Connect die KI nutzen darf. „all“ gibt alle Tools frei.
+      Weniger Bereiche bedeuten weniger Tools – die KI arbeitet dann schneller und gezielter.
+  write_access:
+    name: Schreibrechte
+    description: >-
+      read_only = die KI kann nur lesen.
+      create_only = die KI darf zusätzlich Workouts anlegen, einplanen, an die Uhr senden und
+      Einträge hinzufügen, aber nie etwas löschen oder überschreiben (empfohlen).
+      full = erlaubt auch Löschen und Bearbeiten (Aktivitäten, Workouts, Gewicht, …).
+  enable_tools:
+    name: Einzelne Tools erlauben
+    description: >-
+      Tool-Namen, die trotz der gewählten Schreibrechte verfügbar sein sollen
+      (z. B. set_perceived_effort). Die Liste aller Tools steht in der Dokumentation.
+  disable_tools:
+    name: Einzelne Tools sperren
+    description: Tool-Namen, die nie verfügbar sein sollen (z. B. delete_activity).
+  public_url:
+    name: Öffentliche Adresse
+    description: >-
+      Optional. Die öffentliche HTTPS-Adresse dieses Add-ons, z. B. https://garmin.example.com
+      (Hostname im Cloudflare-Tunnel oder Reverse Proxy). Wird nur genutzt, um dir auf der
+      Add-on-Seite die fertige Connector-URL anzuzeigen.
+  log_level:
+    name: Protokollstufe
+    description: Wie ausführlich das Add-on ins Protokoll schreibt.
+network:
+  8100/tcp: >-
+    MCP-Endpunkt. In der Regel leer lassen und das Add-on stattdessen über einen Tunnel
+    oder ein Reverse-Proxy-Add-on erreichen.
