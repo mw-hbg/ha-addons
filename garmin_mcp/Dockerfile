@@ -37,4 +37,8 @@ LABEL \
     org.opencontainers.image.source="https://github.com/mw-hbg/ha-addons" \
     org.opencontainers.image.licenses="MIT"
 
+# Health check: the Supervisor restarts the add-on when the web UI stops answering
+HEALTHCHECK --interval=30s --timeout=5s --start-period=40s --retries=3 \
+    CMD python3 -c "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8099/status.json', timeout=4)" || exit 1
+
 CMD ["python3", "-u", "/app/launcher.py"]

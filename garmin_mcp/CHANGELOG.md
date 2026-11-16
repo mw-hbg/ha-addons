@@ -18,7 +18,7 @@ Changes
 
 New
 - "Test connection": checks the server, the Garmin login and the connector URL from the internet.
-- Supervisor watchdog restarts the add-on if its web UI stops answering.
+- Health check: the add-on is restarted if its web UI stops answering.
 - Add-on version and documentation link on the add-on page.
 - After updates, new tools are switched off in a saved selection and marked "new".
 

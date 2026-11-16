@@ -14,8 +14,6 @@ arch:
 # Apps panel paths (/config/app/...) and the "Apps" naming exist since 2026.2
 homeassistant: "2026.2.0"
 stage: experimental
-# The Supervisor restarts the add-on if its web UI stops answering
-watchdog: "tcp://[HOST]:8099"
 ingress: true
 homeassistant_api: true
 map:
