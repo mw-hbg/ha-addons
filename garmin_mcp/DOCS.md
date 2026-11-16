@@ -90,6 +90,11 @@ additional_hosts:
 
 Enter that hostname as **Public base URL**. Never forward port 8100 on your
 router without HTTPS.
+
+Best set `direct` before the first start. If you switch later, the add-on
+removes its helper integration from Home Assistant by itself on the next start
+(no restart needed). Switching back to `webhook` installs it again and asks for
+one restart. The connector URL changes when you switch.
 </details>
 
 ### 4. Connect your AI assistant
@@ -150,7 +155,7 @@ brings those options back into effect.
 | `write_access` | `read_only` – reading only. `create_only` (default) – may also create and schedule workouts, send them to the watch and add entries (weigh-ins, hydration, food logs …), but never delete or overwrite. `full` – also delete and edit (activities, workouts, weigh-ins, courses, …). |
 | `enable_tools` | Individual tools to allow although `write_access` or `tool_areas` would exclude them, e.g. `set_perceived_effort` or `push_workout_to_device`. |
 | `disable_tools` | Individual tools that are never available, e.g. `delete_activity`. Always wins. |
-| `remote_access` | `webhook` (default) – reachable through your existing Home Assistant address, needs one Home Assistant restart. `direct` – you route your own HTTPS hostname to port 8100. |
+| `remote_access` | `webhook` (default) – reachable through your existing Home Assistant address, needs one Home Assistant restart. `direct` – you route your own HTTPS hostname to port 8100; switching to it removes the helper integration automatically. |
 | `public_url` | Optional. Your public Home Assistant address (webhook mode) or your own hostname (direct mode), only used to display the connector URL. |
 | `log_level` | `debug`, `info` (default), `warning`, `error`. |
 
@@ -189,8 +194,11 @@ disable_tools: []
 
 ## Uninstalling
 
-Uninstalling the add-on leaves the helper integration in place (it then just
-answers `502`). To remove it completely: *Settings → Devices & services →
+Tip: set **Remote access** to `direct` and restart the add-on once before
+uninstalling – it then removes its helper integration by itself.
+
+Otherwise uninstalling the add-on leaves the helper integration in place (it
+then just answers `502`). To remove it by hand: *Settings → Devices & services →
 Garmin Connect MCP (remote access) → Delete*, then delete the folder
 `custom_components/garmin_mcp_webhook` and the file `.garmin_mcp_webhook.json`
 from your configuration folder and restart Home Assistant.

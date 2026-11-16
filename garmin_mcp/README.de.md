@@ -74,9 +74,41 @@ speichert nichts, liest sonst nichts und protokolliert nur Fehler.
 * Preis: ein Neustart von Home Assistant nach der Installation (und nach
   Updates der Hilfs-Integration). Add-on-Seite und Reparatur-Hinweis sagen dir,
   wann.
-* Willst du das nicht? `remote_access: direct` einstellen – dann wird nichts
-  installiert und du leitest stattdessen einen eigenen HTTPS-Hostnamen auf das
-  Add-on.
+
+## Fernzugriff: webhook oder direct
+
+| | `webhook` (Standard) | `direct` |
+|---|---|---|
+| Erreichbar über | deine bestehende Home-Assistant-Adresse | einen eigenen Hostnamen, z. B. `garmin.example.com` |
+| Hilfs-Integration in Home Assistant | ja | nein |
+| Neustart von Home Assistant | einmal nach der Installation (und nach Updates der Hilfs-Integration) | nie |
+| Du richtest ein | nichts | einen Hostnamen in Tunnel / Reverse Proxy |
+
+`direct` brauchst du nur, wenn du keine zusätzliche Integration in Home
+Assistant willst, keine Neustarts nach Updates, dein Reverse Proxy
+`/api/webhook/` sperrt oder du den Garmin-Zugang getrennt von Home Assistant
+absichern willst.
+
+**`direct` einrichten** – am besten vor dem ersten Start:
+
+1. Add-on installieren, aber noch nicht starten.
+2. Reiter *Konfiguration*: **Fernzugriff** = `direct`, **Öffentliche Adresse** =
+   dein Hostname (z. B. `https://garmin.example.com`). Speichern.
+3. Add-on starten. Es installiert nichts in Home Assistant.
+4. Die Add-on-Seite zeigt ein *Ziel für deinen Tunnel / Reverse Proxy*
+   (z. B. `http://abcd1234-garmin-mcp:8100`). Leite deinen Hostnamen dorthin
+   (Cloudflared-Add-on: `additional_hosts`).
+5. Die auf der Add-on-Seite angezeigte Connector-URL verwenden.
+
+**Später umstellen** geht auch:
+
+* `webhook` → `direct`: Beim nächsten Start entfernt das Add-on seine
+  Hilfs-Integration selbst aus Home Assistant (kein Neustart nötig). Danach
+  weiter mit Schritt 4–5.
+* `direct` → `webhook`: Beim nächsten Start installiert das Add-on die
+  Hilfs-Integration wieder und bittet um einen Neustart von Home Assistant.
+
+Beim Umstellen ändert sich die Connector-URL – trag die neue in deiner KI-App ein.
 
 ## Lizenz
 

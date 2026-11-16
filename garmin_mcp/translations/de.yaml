@@ -30,6 +30,7 @@ configuration:
       (Nabu Casa, Cloudflare-Tunnel, Reverse Proxy …), sonst nichts einzurichten. Installiert
       eine kleine Hilfs-Integration; Home Assistant muss einmal neu gestartet werden.
       direct = du leitest einen eigenen HTTPS-Hostnamen auf Port 8100 dieses Add-ons.
+      Später auf direct umstellen: Das Add-on entfernt seine Hilfs-Integration beim nächsten Start selbst. Zurück auf webhook installiert sie wieder (ein Neustart). Beim Umstellen ändert sich die Connector-URL.
   public_url:
     name: Öffentliche Adresse
     description: >-

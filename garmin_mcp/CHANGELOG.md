@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.2.3
+
+- Switching remote access to `direct` now cleans up: on the next start the add-on removes its
+  helper integration from Home Assistant (config entry, files) by itself – no restart needed.
+- README: new section on the two remote access modes, how to set up `direct` and what happens
+  when switching later; explanation why the helper integration exists.
+
 ## 0.2.2
 
 - New page "Choose tools": all tools grouped by category with search, presets (read only /

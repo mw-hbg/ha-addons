@@ -484,6 +484,7 @@ class RemoteAccess:
         # loaded: Python modules only reload with a Home Assistant restart.
         self.pending_restart = False
         self._saw_ha_down = False
+        self.cleaned_up = False
 
     # files ---------------------------------------------------------------
     def _install_component(self) -> bool:
@@ -553,8 +554,30 @@ class RemoteAccess:
         )
 
     # loop ----------------------------------------------------------------
+    def _cleanup(self) -> None:
+        """Direct mode: remove the helper integration if an earlier start installed it."""
+        if not (COMPONENT_DST.exists() or WEBHOOK_CONFIG.exists()):
+            return
+        log.info("Remote access is set to direct – removing the helper integration")
+        for _ in range(10):
+            entry, api_ok = self._entry()
+            if api_ok:
+                break
+            time.sleep(10)
+        if entry:
+            core_api("DELETE", f"/config/config_entries/entry/{entry['entry_id']}")
+        WEBHOOK_CONFIG.unlink(missing_ok=True)
+        shutil.rmtree(COMPONENT_DST, ignore_errors=True)
+        self._dismiss_notification()
+        self.cleaned_up = True
+        log.info("Helper integration removed (no Home Assistant restart needed)")
+
     def run(self) -> None:
         if not self.enabled:
+            try:
+                self._cleanup()
+            except Exception as exc:  # noqa: BLE001
+                log.warning("Could not remove the helper integration: %s", exc)
             return
         if not HA_CONFIG.is_dir():
             self.state, self.detail = "error", "no access to the Home Assistant config folder"
@@ -840,6 +863,7 @@ TEXT = {
         "info_original": "Original description",
         "ok_tools": "Selection saved. The server is restarting.",
         "ok_tools_reset": "Selection reset – the configuration applies again.",
+        "cleaned_up": "Remote access is set to “direct”: the helper integration for the webhook was removed from Home Assistant. No restart needed.",
         "remote": "Remote access",
         "remote_active": "Active – via your Home Assistant address",
         "remote_setting_up": "Setting up …",
@@ -937,6 +961,7 @@ TEXT = {
         "info_original": "Originalbeschreibung",
         "ok_tools": "Auswahl gespeichert. Der Server startet neu.",
         "ok_tools_reset": "Auswahl zurückgesetzt – es gilt wieder die Konfiguration.",
+        "cleaned_up": "Fernzugriff steht auf „direct“: Die Hilfs-Integration für den Webhook wurde aus Home Assistant entfernt. Ein Neustart ist nicht nötig.",
         "remote": "Fernzugriff",
         "remote_active": "Aktiv – über deine Home-Assistant-Adresse",
         "remote_setting_up": "Wird eingerichtet …",
@@ -1158,6 +1183,8 @@ async def index(request: Request) -> Response:
             f'<p class="muted">{t["oauth_hint"]}</p>{rotate_form}'
         )
     else:
+        if remote.cleaned_up:
+            parts.append(f'<p class="ok">{t["cleaned_up"]}</p>')
         parts.append(
             f'<label>{t["connector_url"]}</label>{_secret_field("url", direct_url, t)}'
             + ("" if direct_public else f'<p class="muted">{t["no_public_url"]}</p>')

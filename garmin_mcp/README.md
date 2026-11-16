@@ -69,8 +69,40 @@ reads nothing else and logs nothing but errors.
 * Benefit: no extra hostname, tunnel or port forwarding.
 * Cost: one Home Assistant restart after installing (and after updates of the
   helper). The add-on page and a repair notice tell you when.
-* Don't want that? Set `remote_access: direct` – then nothing is installed and
-  you route your own HTTPS hostname to the add-on instead.
+
+## Remote access: webhook or direct
+
+| | `webhook` (default) | `direct` |
+|---|---|---|
+| Reached via | your existing Home Assistant address | your own hostname, e.g. `garmin.example.com` |
+| Helper integration in Home Assistant | yes | no |
+| Home Assistant restart | once after installing (and after helper updates) | never |
+| You set up | nothing | a hostname in your tunnel / reverse proxy |
+
+Use `direct` only if you don't want an extra integration in Home Assistant,
+don't want restarts after updates, your reverse proxy blocks `/api/webhook/`,
+or you want to secure Garmin access separately from Home Assistant.
+
+**Setting up `direct`** – best before the first start:
+
+1. Install the add-on, but don't start it yet.
+2. *Configuration* tab: **Remote access** = `direct`, **Public base URL** =
+   your hostname (e.g. `https://garmin.example.com`). Save.
+3. Start the add-on. It installs nothing in Home Assistant.
+4. The add-on page shows a *target for your tunnel / reverse proxy*
+   (e.g. `http://abcd1234-garmin-mcp:8100`). Route your hostname there
+   (Cloudflared add-on: `additional_hosts`).
+5. Use the connector URL shown on the add-on page.
+
+**Switching later** is fine too:
+
+* `webhook` → `direct`: on the next start the add-on removes its helper
+  integration from Home Assistant by itself (no restart needed). Then continue
+  with steps 4–5.
+* `direct` → `webhook`: on the next start the add-on installs the helper again
+  and asks for one Home Assistant restart.
+
+The connector URL changes when you switch – update it in your AI app.
 
 ## Requirements
 
