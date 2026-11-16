@@ -29,9 +29,10 @@ von Garmin zu deinem KI-Assistenten.
   Home Assistant ohnehin von außen nutzt – per Webhook.
 * **Verbindungstest** per Klick – Server, Garmin-Anmeldung und Connector-URL
   aus dem Internet.
-* **Kein Zugriff auf die Home-Assistant-API**, und der MCP-Server ist in seine eigenen
-  Ordner eingesperrt (eingeschränkter Benutzer + Linux-Landlock) – über diese App lässt sich
-  von außen nichts in Home Assistant ändern.
+* **Kein Zugriff auf die Home-Assistant-API**, ein AppArmor-Profil für die ganze App
+  (Sicherheitsbewertung 8/8) und der MCP-Server in seine eigenen Ordner eingesperrt
+  (eingeschränkter Benutzer + Linux-Landlock) – über diese App lässt sich von außen nichts
+  in Home Assistant ändern.
 * **Reparatur-Hinweise**, wenn die Garmin-Anmeldung abgelaufen ist oder ein Update der
   Hilfs-Integration einen Neustart braucht (den allerersten Neustart nach der
   Installation zeigt nur die App-Seite an).
@@ -93,8 +94,8 @@ der Link zur deutschen Fassung.
   deinen Home-Assistant-Backups. *Abmelden und Tokens löschen* entfernt sie aus der App;
   um sie bei Garmin ungültig zu machen, änderst du dein Garmin-Passwort.
 * **Die App kann Home Assistant nicht verändern:** kein Zugriff auf die
-  Home-Assistant-API. Ihr einziger Zugriff ist der Konfigurationsordner, und zwar nur, um
-  ihre Hilfs-Integration hineinzukopieren. Der MCP-Server – der einzige von außen
+  Home-Assistant-API. Ihr einziger Zugriff ist der Konfigurationsordner, und ihr
+  AppArmor-Profil erlaubt dort nur den Ordner der Hilfs-Integration. Der MCP-Server – der einzige von außen
   erreichbare Teil – läuft als eingeschränkter Benutzer und ist mit Linux-Landlock in
   seine eigenen Ordner eingesperrt.
 

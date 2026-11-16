@@ -147,6 +147,11 @@ Die **Connector-URL** von der App-Seite kopieren. Sie sieht so aus:
 * **Aus dem Internet** ist nur der MCP-Endpunkt erreichbar (über den Webhook oder deinen
   eigenen Hostnamen). Er führt nur Garmin-Tools aus – von dort gibt es keinen Weg zu Home
   Assistant oder zur App-Seite.
+* **AppArmor-Profil für die ganze App:** Der Linux-Kernel beschränkt jeden Prozess der
+  App – auch ihren internen Teil – auf das Nötige. Im Home-Assistant-Konfigurationsordner
+  darf sie nur `custom_components/garmin_mcp_webhook` anfassen; `secrets.yaml` lesen oder
+  dort sonst etwas ändern, andere Programme als Python und nginx starten oder
+  Systemeinstellungen ändern kann sie nicht. Home Assistant bewertet die App mit 8 von 8.
 * **Der MCP-Server ist eingesperrt:** Er läuft als eingeschränkter Benutzer und sperrt
   sich zusätzlich mit *Landlock* (Linux-Kernel) selbst ein: Er erreicht nur seine eigenen
   Ordner (Garmin-Tokens, Downloads) – nicht den Home-Assistant-Konfigurationsordner (nicht

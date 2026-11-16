@@ -147,6 +147,11 @@ Copy the **Connector URL** from the app page. It looks like
 * **From the internet** only the MCP endpoint is reachable (through the webhook or
   your own hostname). It only runs Garmin tools – there is no path from it to Home
   Assistant or to the app page.
+* **AppArmor profile for the whole app:** the Linux kernel limits every process of the
+  app – including its internal part – to what it needs. In the Home Assistant
+  configuration folder it can only touch `custom_components/garmin_mcp_webhook`; it
+  cannot read `secrets.yaml` or change anything else there, start other programs than
+  Python and nginx or change system settings. Home Assistant rates the app 8 of 8.
 * **The MCP server is locked in:** it runs as an unprivileged user and additionally
   restricts itself with the Linux kernel's *Landlock*: it can reach only its own
   folders (Garmin tokens, downloads) – not the Home Assistant configuration folder

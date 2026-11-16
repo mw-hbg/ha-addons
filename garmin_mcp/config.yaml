@@ -22,7 +22,8 @@ discovery:
 map:
   # Only used to copy the small helper integration that provides the webhook
   # into custom_components/garmin_mcp_webhook (and to remove it again in
-  # direct mode). Home Assistant offers no narrower mapping. Only the app's
+  # direct mode). Home Assistant offers no narrower mapping; apparmor.txt limits
+  # access to exactly that folder. Only the app's
   # internal part (root) touches it – never the internet-facing MCP server.
   - type: homeassistant_config
     read_only: false

@@ -29,5 +29,7 @@ please report those there – and in Garmin's own services.
 * The app has no access to the Home Assistant API. Its only access to Home
   Assistant is the configuration folder, used solely to copy (and in direct
   mode remove) the helper integration `custom_components/garmin_mcp_webhook`.
+* An AppArmor profile confines the whole app; in the configuration folder it only
+  allows `custom_components/garmin_mcp_webhook`.
 * The internet-facing MCP server runs as an unprivileged user and is confined
   with Linux Landlock to its own folders (Garmin tokens, downloads, `/tmp`).

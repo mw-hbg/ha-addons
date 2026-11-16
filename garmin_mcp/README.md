@@ -31,9 +31,10 @@ without any additional service in between.
 * **Repair notices** in Home Assistant when the Garmin login expired or an update of the
   helper integration needs a restart (the very first restart after installing is only
   shown on the app page).
-* **No access to the Home Assistant API**, and the MCP server is locked into its own
-  folders (unprivileged user + Linux Landlock) – nothing in Home Assistant can be changed
-  from outside through this app.
+* **No access to the Home Assistant API**, an AppArmor profile for the whole app
+  (security rating 8/8) and the MCP server locked into its own folders (unprivileged user
+  + Linux Landlock) – nothing in Home Assistant can be changed from outside through this
+  app.
 * **Protected endpoint:** only reachable via a long random secret URL, which you
   can rotate with one click.
 * **English and German** – app page, configuration, repair notices and documentation;
@@ -88,7 +89,8 @@ app's *Documentation* tab).
   Assistant backups. *Log out and delete tokens* removes them from the app; to revoke
   them at Garmin, change your Garmin password.
 * **The app cannot change Home Assistant:** no access to the Home Assistant API. Its only
-  access is the configuration folder, used solely to copy its helper integration. The MCP
+  access is the configuration folder, and its AppArmor profile allows only the helper
+  integration's own folder there. The MCP
   server – the only part reachable from the internet – runs as an unprivileged user and
   is locked into its own folders with Linux Landlock.
 
