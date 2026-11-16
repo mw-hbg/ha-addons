@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.4.1
 
 - Fixed: the app page reloaded itself every few seconds while remote access was being set
   up, so you could not log in. It now only reloads when the status actually changes and
