@@ -3,43 +3,70 @@ configuration:
   tool_areas:
     name: Bereiche
     description: >-
-      Welche Bereiche von Garmin Connect die KI nutzen darf. „all“ gibt alle Tools frei.
-      Weniger Bereiche bedeuten weniger Tools – die KI arbeitet dann schneller und gezielter.
-      Wird ignoriert, sobald du auf der Add-on-Seite unter „Tools auswählen“ eine eigene Auswahl speicherst.
+      Welche Teile von Garmin Connect die KI nutzen darf. Mehrere lassen sich kombinieren.
+      all = alle Tools (Standard).
+      minimal = kleiner Tagesüberblick (Aktivitäten, Schlaf, Stress, Body Battery, Trainingszustand).
+      health = Schlaf, Herzfrequenz, Stress, Body Battery, Schritte, Gewicht, Blutdruck, Trinken.
+      activities = Aktivitäten mit Details, Splits, Runden, Wetter, Ausrüstung, Strecken.
+      workouts = Workouts, Trainingspläne, Kalender, Workouts einplanen, verschieben und an die Uhr senden.
+      training = Trainingszustand, Trainingsbereitschaft, VO2max, HFV, Wettkampfprognosen, Bestleistungen, Challenges und Abzeichen.
+      nutrition = Ernährungstagebuch, Mahlzeiten, eigene Lebensmittel.
+      Geräte-Tools (Uhreinstellungen, Wecker, Solar) und das Ändern der Herzfrequenzzonen gibt es nur bei „all“ – bei Bedarf unter „Einzelne Tools erlauben“ ergänzen.
+      Weniger Tools = die KI arbeitet schneller und gezielter.
+      Wird ignoriert, sobald du auf der App-Seite unter „Tools auswählen“ eine eigene Auswahl speicherst.
   write_access:
     name: Schreibrechte
     description: >-
       read_only = die KI kann nur lesen.
-      create_only = die KI darf zusätzlich Workouts anlegen, einplanen, an die Uhr senden und
-      Einträge hinzufügen, aber nie etwas löschen oder überschreiben (empfohlen).
-      full = erlaubt auch Löschen und Bearbeiten (Aktivitäten, Workouts, Gewicht, …).
-      Wird ignoriert, sobald du auf der Add-on-Seite unter „Tools auswählen“ eine eigene Auswahl speicherst.
+      create_only (empfohlen) = darf zusätzlich Workouts anlegen, einplanen, an die Uhr senden und
+      Einträge hinzufügen (Gewicht, Trinken, Essen, Blutdruck), aber nie etwas löschen oder überschreiben.
+      full = erlaubt auch Löschen und Bearbeiten (Aktivitäten, Workouts, Gewicht, Strecken, Einstellungen).
+      Wird ignoriert, sobald du auf der App-Seite unter „Tools auswählen“ eine eigene Auswahl speicherst.
   enable_tools:
     name: Einzelne Tools erlauben
     description: >-
-      Tool-Namen, die trotz der gewählten Schreibrechte verfügbar sein sollen
-      (z. B. set_perceived_effort). Die Liste aller Tools steht in der Dokumentation.
-      Wird ignoriert, sobald du auf der Add-on-Seite unter „Tools auswählen“ eine eigene Auswahl speicherst.
+      Genaue Tool-Namen, die verfügbar sein sollen, obwohl Bereiche oder Schreibrechte sie
+      ausschließen würden, z. B. push_workout_to_device oder set_perceived_effort. Ein Name pro Eintrag.
+      Unbekannte Namen zeigt die App-Seite als Warnung an. Alle Namen: „Tools auswählen“ auf der App-Seite oder die Dokumentation.
+      Wird ignoriert, sobald du unter „Tools auswählen“ eine eigene Auswahl speicherst.
   disable_tools:
     name: Einzelne Tools sperren
-    description: Tool-Namen, die nie verfügbar sein sollen (z. B. delete_activity). Wird ignoriert, sobald du auf der Add-on-Seite unter „Tools auswählen“ eine eigene Auswahl speicherst.
+    description: >-
+      Genaue Tool-Namen, die nie verfügbar sind, z. B. delete_activity. Hat immer Vorrang vor
+      „Einzelne Tools erlauben“. Wird ignoriert, sobald du unter „Tools auswählen“ eine eigene Auswahl speicherst.
   remote_access:
     name: Fernzugriff
     description: >-
       webhook (empfohlen) = erreichbar über deine bestehende Home-Assistant-Adresse
       (Nabu Casa, Cloudflare-Tunnel, Reverse Proxy …), sonst nichts einzurichten. Installiert
       eine kleine Hilfs-Integration; Home Assistant muss einmal neu gestartet werden.
-      direct = du leitest einen eigenen HTTPS-Hostnamen auf Port 8100 dieses Add-ons.
-      Später auf direct umstellen: Das Add-on entfernt seine Hilfs-Integration beim nächsten Start selbst. Zurück auf webhook installiert sie wieder (ein Neustart). Beim Umstellen ändert sich die Connector-URL.
+      direct = du leitest einen eigenen HTTPS-Hostnamen auf Port 8100 dieser App (siehe „Netzwerk“ unten).
+      Umstellen auf direct: Die App entfernt ihre Hilfs-Integration beim nächsten Start selbst.
+      Zurück auf webhook installiert sie wieder (ein Neustart). Beim Umstellen ändert sich die Connector-URL.
   public_url:
     name: Öffentliche Adresse
     description: >-
-      Optional. Nur nötig, wenn die Add-on-Seite deine öffentliche Adresse nicht selbst
-      ermitteln kann. Webhook: deine Home-Assistant-Adresse, z. B. https://home.example.com.
-      Direct: der Hostname, den du auf das Add-on geleitet hast, z. B. https://garmin.example.com.
+      Optional – meist leer lassen. Nur nötig, wenn die App-Seite deine öffentliche Adresse nicht
+      selbst ermitteln kann (dort steht dann ein Platzhalter). Webhook: deine Home-Assistant-Adresse,
+      z. B. https://home.example.com. Direct: der Hostname, den du auf diese App geleitet hast, z. B.
+      https://garmin.example.com. Verwendet werden nur Schema und Host; eine kopierte Browser-Adresse
+      wie https://home.example.com/lovelace/0 funktioniert auch.
+  keep_downloads_days:
+    name: Downloads aufbewahren (Tage)
+    description: >-
+      Aktivitätsdateien (FIT/GPX), die die KI herunterlädt, werden nach so vielen Tagen gelöscht,
+      damit sie nicht Speicher und Backups füllen. 0 = nie löschen. Downloads landen nie im Backup.
+  login_notification:
+    name: Hinweis bei Login-Problemen
+    description: >-
+      Zeigt eine Benachrichtigung in Home Assistant, wenn die Garmin-Anmeldung nicht mehr
+      funktioniert (z. B. Passwort geändert) und die App das nicht selbst beheben konnte.
   log_level:
     name: Protokollstufe
-    description: Wie ausführlich das Add-on ins Protokoll schreibt.
+    description: >-
+      Wie ausführlich die App ins Protokoll schreibt. info reicht im Alltag; debug protokolliert
+      zusätzlich jede einzelne Anfrage der KI (nur zur Fehlersuche).
 network:
   8100/tcp: >-
-    MCP-Endpunkt für Fernzugriff „direct“. Beim Standard (webhook) leer lassen.
+    Nur für Fernzugriff „direct“: MCP-Endpunkt (durch den geheimen Pfad geschützt). Beim
+    Standard (webhook) leer lassen.

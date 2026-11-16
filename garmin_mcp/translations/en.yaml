@@ -3,43 +3,70 @@ configuration:
   tool_areas:
     name: Tool areas
     description: >-
-      Which areas of Garmin Connect the AI may use. "all" exposes every tool.
-      Fewer areas mean fewer tools, which keeps the AI faster and more focused.
-      Ignored once you save your own selection under “Choose tools” on the add-on page.
+      Which parts of Garmin Connect the AI may use. Several can be combined.
+      all = every tool (default).
+      minimal = a small daily overview (activities, sleep, stress, Body Battery, training status).
+      health = sleep, heart rate, stress, Body Battery, steps, weight, blood pressure, hydration.
+      activities = activities with details, splits, laps, weather, gear, courses.
+      workouts = workouts, training plans, calendar, scheduling and moving workouts, sending them to the watch.
+      training = training status, readiness, VO2 max, HRV, race predictions, records, challenges and badges.
+      nutrition = food log, meals, custom foods.
+      Device tools (watch settings, alarms, solar) and changing heart rate zones are only part of "all" – add them under "Allow individual tools" if needed.
+      Fewer tools keep the AI faster and more focused.
+      Ignored as soon as you save your own selection under “Choose tools” on the app page.
   write_access:
     name: Write access
     description: >-
-      read_only = the AI can only read data.
-      create_only = the AI may additionally create and schedule workouts, send them to your watch
-      and add entries, but never delete or overwrite anything (recommended).
-      full = also allows deleting and editing (activities, workouts, weigh-ins, …).
-      Ignored once you save your own selection under “Choose tools” on the add-on page.
+      read_only = the AI can only read.
+      create_only (recommended) = may also create and schedule workouts, send them to your watch
+      and add entries (weight, hydration, food, blood pressure), but never delete or overwrite anything.
+      full = also allows deleting and editing (activities, workouts, weigh-ins, courses, settings).
+      Ignored as soon as you save your own selection under “Choose tools” on the app page.
   enable_tools:
     name: Allow individual tools
     description: >-
-      Tool names that should be available even though the write access level blocks them
-      (e.g. set_perceived_effort). See the documentation for the tool list.
-      Ignored once you save your own selection under “Choose tools” on the add-on page.
+      Exact tool names that should be available even though the areas or the write access
+      would exclude them, e.g. push_workout_to_device or set_perceived_effort. One name per entry.
+      Unknown names are shown as a warning on the app page. All names: “Choose tools” on the app page or the documentation.
+      Ignored as soon as you save your own selection under “Choose tools”.
   disable_tools:
     name: Block individual tools
-    description: Tool names that should never be available (e.g. delete_activity). Ignored once you save your own selection under “Choose tools” on the add-on page.
+    description: >-
+      Exact tool names that are never available, e.g. delete_activity. Always wins over
+      “Allow individual tools”. Ignored as soon as you save your own selection under “Choose tools”.
   remote_access:
     name: Remote access
     description: >-
       webhook (recommended) = reachable through your existing Home Assistant address
       (Nabu Casa, Cloudflare Tunnel, reverse proxy …), nothing else to set up. Installs a
       small helper integration; Home Assistant must be restarted once.
-      direct = you route your own HTTPS hostname to port 8100 of this add-on.
-      Switching to direct later: the add-on removes its helper integration by itself on the next start. Switching back to webhook installs it again (one restart). The connector URL changes when switching.
+      direct = you route your own HTTPS hostname to port 8100 of this app (see “Network” below).
+      Switching to direct: the app removes its helper integration by itself on the next start.
+      Switching back to webhook installs it again (one restart). The connector URL changes when switching.
   public_url:
-    name: Public base URL
+    name: Public address
     description: >-
-      Optional. Only needed if the add-on page cannot work out your public address.
-      Webhook mode: your Home Assistant address, e.g. https://home.example.com.
-      Direct mode: the hostname you routed to the add-on, e.g. https://garmin.example.com.
+      Optional – leave empty in most cases. Only needed if the app page cannot work out your
+      public address (shown as a placeholder there). Webhook: your Home Assistant address,
+      e.g. https://home.example.com. Direct: the hostname you routed to this app, e.g.
+      https://garmin.example.com. Only scheme and host are used; a copied browser address like
+      https://home.example.com/lovelace/0 also works.
+  keep_downloads_days:
+    name: Keep downloads (days)
+    description: >-
+      Activity files (FIT/GPX) the AI downloads are deleted after this many days, so they do
+      not fill the disk and your backups. 0 = never delete. Downloads are never part of a backup.
+  login_notification:
+    name: Login notification
+    description: >-
+      Show a Home Assistant notification if the Garmin login stops working (e.g. password
+      changed) and the app could not fix it by itself.
   log_level:
     name: Log level
-    description: How much the add-on writes to its log.
+    description: >-
+      How much the app writes to its log. info is enough for everyday use; debug also logs
+      every single request of the AI (only for troubleshooting).
 network:
   8100/tcp: >-
-    MCP endpoint for remote access "direct". Leave empty with the default webhook mode.
+    Only for remote access “direct”: MCP endpoint (protected by the secret path). Leave empty
+    with the default webhook mode.

@@ -42,7 +42,7 @@ AI assistant ──HTTPS──► your Home Assistant address ──► /api/web
 
 ## Setup
 
-Requires Home Assistant **2026.2** or newer (OS or Supervised). The add-on is
+Requires Home Assistant **2026.2** or newer (OS or Supervised). Since 2026.2 Home Assistant calls add-ons *apps*; both words mean the same here. The add-on is
 marked *experimental* until version 1.0.
 
 ### 1. Install and start
@@ -181,21 +181,29 @@ brings those options back into effect.
 
 ## Configuration
 
+All options are on the **Configuration** tab of the app. Changes take effect after
+restarting the app; the app page then shows how many tools are active.
+
 | Option | Description |
 |---|---|
-| `tool_areas` | Which areas the AI may use: `all` (default), `minimal`, `health`, `activities`, `workouts`, `training`, `nutrition`. Several can be combined. Fewer tools keep the AI faster and more focused. |
-| `write_access` | `read_only` – reading only. `create_only` (default) – may also create and schedule workouts, send them to the watch and add entries (weigh-ins, hydration, food logs …), but never delete or overwrite. `full` – also delete and edit (activities, workouts, weigh-ins, courses, …). |
-| `enable_tools` | Individual tools to allow although `write_access` or `tool_areas` would exclude them, e.g. `set_perceived_effort` or `push_workout_to_device`. |
-| `disable_tools` | Individual tools that are never available, e.g. `delete_activity`. Always wins. |
+| `tool_areas` | Which parts of Garmin Connect the AI may use (several can be combined): `all` (default) – every tool. `minimal` – a small daily overview (activities, sleep, stress, Body Battery, training status). `health` – sleep, heart rate, stress, Body Battery, steps, weight, blood pressure, hydration, cycle. `activities` – activities with details, splits, laps, weather, gear, courses. `workouts` – workouts, training plans, calendar, scheduling and moving workouts, sending them to the watch. `training` – training status, readiness, VO2 max, HRV, race predictions, records, challenges and badges. `nutrition` – food log, meals, custom foods. Fewer tools keep the AI faster and more focused. |
+| `write_access` | `read_only` – reading only. `create_only` (default) – may also create and schedule workouts, send them to the watch and add entries (weigh-ins, hydration, food logs, blood pressure …), but never delete or overwrite. `full` – also delete and edit (activities, workouts, weigh-ins, courses, settings …). |
+| `enable_tools` | Exact tool names to allow although `tool_areas` or `write_access` would exclude them, e.g. `set_perceived_effort` or `get_device_settings`. Unknown names (typos) are shown as a warning on the app page. |
+| `disable_tools` | Exact tool names that are never available, e.g. `delete_activity`. Always wins. |
 | `remote_access` | `webhook` (default) – reachable through your existing Home Assistant address, needs one Home Assistant restart. `direct` – you route your own HTTPS hostname to port 8100; switching to it removes the helper integration automatically. |
-| `public_url` | Optional. Your public Home Assistant address (webhook mode) or your own hostname (direct mode), only used to display the connector URL. |
+| `public_url` | Optional, usually empty. Your public Home Assistant address (webhook) or your own hostname (direct), only used to show the connector URL and for the connection test. Only scheme and host are used, so a copied browser address works too. The app page warns if it is invalid or uses `http://`. |
+| `keep_downloads_days` | Activity files (FIT/GPX) the AI downloads are deleted after this many days (default 7, `0` = never). Downloads are never part of a Home Assistant backup. |
+| `login_notification` | `true` (default): Home Assistant notification if the Garmin login stops working and the app could not fix it by retrying. |
 | `log_level` | `debug`, `info` (default), `warning`, `error`. Only `debug` also logs every single MCP request. |
 
-Changes take effect after restarting the add-on. The add-on page shows how many
-tools are active.
+`tool_areas`, `write_access`, `enable_tools` and `disable_tools` are ignored as soon as you
+save your own selection under **Choose tools** on the app page (the page then shows
+“custom selection”). **Reset to configuration** there switches back.
 
-> Tip: `push_workout_to_device` and the device tools are only part of `all`.
-> If you pick specific areas, add them via `enable_tools` when you need them.
+> Device tools (watch settings, alarms, solar) and `set_heart_rate_zones` are only part of
+> `all`. With specific areas, add them via `enable_tools` when you need them.
+> With `workouts`, the app automatically adds `push_workout_to_device` and
+> `reschedule_workout` (still subject to `write_access`).
 
 ### Example: training coach without delete rights
 
@@ -206,10 +214,13 @@ tool_areas:
   - workouts
 write_access: create_only
 enable_tools:
-  - push_workout_to_device
   - set_perceived_effort
 disable_tools: []
+keep_downloads_days: 7
 ```
+
+`push_workout_to_device` comes with `workouts` automatically, `set_perceived_effort`
+changes an existing activity and therefore needs `enable_tools` with `create_only`.
 
 ## Troubleshooting
 

@@ -4,7 +4,6 @@ confined, logins are throttled, texts can't break the page."""
 import asyncio
 import json
 import os
-import re
 import stat
 
 import pytest

@@ -29,10 +29,12 @@ import time
 import urllib.error
 import urllib.request
 from pathlib import Path
+from urllib.parse import urlsplit
 
 import anyio
 import uvicorn
 from starlette.applications import Starlette
+from starlette.middleware import Middleware
 from starlette.requests import Request
 from starlette.responses import HTMLResponse, JSONResponse, RedirectResponse, Response
 from starlette.routing import Route
@@ -189,6 +191,8 @@ DEFAULT_OPTIONS = {
     "disable_tools": [],
     "remote_access": "webhook",
     "public_url": "",
+    "keep_downloads_days": 7,
+    "login_notification": True,
     "log_level": "info",
 }
 
@@ -202,6 +206,81 @@ def load_options() -> dict:
     except json.JSONDecodeError as exc:
         log.error("options.json is invalid (%s), using defaults", exc)
     return options
+
+
+# Added to the server's tool profiles: planning workouts without being able
+# to put them on the watch or move them is of little use.
+AREA_EXTRAS = {
+    "workouts": {"push_workout_to_device", "reschedule_workout"},
+}
+
+
+def normalize_public_url(value) -> tuple[str, str]:
+    """Return (base URL, problem) for the public_url option.
+
+    Accepts "example.com", "https://example.com/" or a copied browser address
+    like "https://example.com/lovelace/0" and reduces it to scheme + host.
+    problem is "" (fine), "http" (works, but AI apps need HTTPS) or
+    "invalid" (ignored).
+    """
+    raw = str(value or "").strip()
+    if not raw:
+        return "", ""
+    if "://" not in raw:
+        raw = "https://" + raw
+    try:
+        parts = urlsplit(raw)
+        host = parts.hostname or ""
+        port = parts.port  # raises ValueError for a bad port
+    except ValueError:
+        return "", "invalid"
+    if parts.scheme not in ("http", "https") or not host or " " in raw or parts.username:
+        return "", "invalid"
+    netloc = f"[{host}]" if ":" in host else host
+    if port:
+        netloc += f":{port}"
+    return f"{parts.scheme}://{netloc}", ("http" if parts.scheme == "http" else "")
+
+
+def unknown_tool_names(options: dict) -> list[str]:
+    """Tool names in enable_tools/disable_tools that do not exist (typos)."""
+    return sorted((_names(options.get("enable_tools")) | _names(options.get("disable_tools"))) - ALL_TOOLS)
+
+
+def keep_days(options: dict) -> int:
+    try:
+        return max(0, min(365, int(options.get("keep_downloads_days", 7))))
+    except (TypeError, ValueError):
+        return 7
+
+
+def prune_downloads(days: int, now: float | None = None) -> int:
+    """Delete downloaded files older than `days` (0 = keep everything).
+
+    Downloads are only a hand-over to the AI; keeping them forever would fill
+    the disk and every Home Assistant backup."""
+    if days <= 0 or not DOWNLOAD_DIR.is_dir():
+        return 0
+    limit = (now or time.time()) - days * 86400
+    removed = 0
+    # os.walk never follows symlinks; a link is removed itself, not its target.
+    for root, dirs, files in os.walk(DOWNLOAD_DIR, topdown=False, followlinks=False):
+        for name in files + [d for d in dirs if os.path.islink(os.path.join(root, d))]:
+            path = Path(root, name)
+            try:
+                if path.lstat().st_mtime < limit:
+                    path.unlink()
+                    removed += 1
+            except OSError as exc:
+                log.debug("Could not remove %s: %s", path, exc)
+        if Path(root) != DOWNLOAD_DIR:
+            try:
+                Path(root).rmdir()  # only succeeds when empty
+            except OSError:
+                pass
+    if removed:
+        log.info("Removed %d downloaded file(s) older than %d days", removed, days)
+    return removed
 
 
 def _names(values) -> set[str]:
@@ -230,17 +309,23 @@ def tool_selection(options: dict) -> tuple[dict, set[str]]:
     enable = _names(options.get("enable_tools"))
     disable = _names(options.get("disable_tools"))
     disabled = (blocked - enable) | disable
+    # Tools the server's profiles leave out although the area clearly needs
+    # them. They still obey write_access (they are not in `enable`).
+    extras = set()
+    for area in areas:
+        extras |= AREA_EXTRAS.get(area, set())
+    extras &= ALL_TOOLS
 
     env = {"GARMIN_DISABLED_TOOLS": ",".join(sorted(disabled))}
     if profile is not None:
         env["GARMIN_TOOL_PROFILE"] = ",".join(areas)
-        if enable:
+        if enable | extras:
             # With a profile, upstream's allowlist ADDS tools to the profile.
-            env["GARMIN_ENABLED_TOOLS"] = ",".join(sorted(enable))
+            env["GARMIN_ENABLED_TOOLS"] = ",".join(sorted(enable | extras))
     # Without a profile every tool registers anyway; an allowlist would turn
     # into "only these tools", so it is intentionally not passed.
 
-    base = set(ALL_TOOLS) if profile is None else set(profile) | (enable & ALL_TOOLS)
+    base = set(ALL_TOOLS) if profile is None else set(profile) | ((enable | extras) & ALL_TOOLS)
     active = base - disabled
     unknown = sorted((enable | disable) - ALL_TOOLS)
     if unknown:
@@ -332,7 +417,7 @@ http {{
         }}
         location @unavailable {{
             default_type application/json;
-            return 503 '{{"error":"Garmin MCP is not ready. Open the add-on page in Home Assistant and log in to Garmin Connect."}}';
+            return 503 '{{"error":"Garmin MCP is not ready. Open the Garmin MCP app page in Home Assistant and log in to Garmin Connect."}}';
         }}
         location / {{
             return 404;
@@ -403,7 +488,7 @@ class Services:
             if self.mcp and self.mcp.poll() is None:
                 return
             if not has_tokens():
-                log.info("Not logged in to Garmin Connect yet – open the add-on page to log in")
+                log.info("Not logged in to Garmin Connect yet – open the app page to log in")
                 return
             DOWNLOAD_DIR.mkdir(exist_ok=True)
             env = dict(os.environ)
@@ -501,7 +586,8 @@ class Services:
                 pause // 60,
             )
             self.restart_mcp()
-        if state == "failed" and self._login_failures >= 2 and not self._login_alert:
+        notify = bool(self.options.get("login_notification", True))
+        if notify and state == "failed" and self._login_failures >= 2 and not self._login_alert:
             log.warning("Garmin login failed – asking the user to log in again")
             core_api(
                 "POST",
@@ -540,6 +626,11 @@ class Services:
                     self._check_login()
                 except Exception as exc:  # noqa: BLE001
                     log.debug("Login check failed: %s", exc)
+            if ticks % 720 == 1:  # at start, then once an hour
+                try:
+                    prune_downloads(keep_days(self.options))
+                except Exception as exc:  # noqa: BLE001
+                    log.debug("Download cleanup failed: %s", exc)
             with self.lock:
                 if self.stopping:
                     return
@@ -671,8 +762,8 @@ class RemoteAccess:
                 "title": "Garmin Connect MCP",
                 "message": (
                     "Please restart Home Assistant once to activate remote access "
-                    "for the Garmin Connect MCP add-on. / Bitte Home Assistant einmal "
-                    "neu starten, um den Fernzugriff für das Add-on Garmin Connect MCP "
+                    "for the Garmin Connect MCP app. / Bitte Home Assistant einmal "
+                    "neu starten, um den Fernzugriff für die App Garmin Connect MCP "
                     "zu aktivieren."
                 ),
             },
@@ -787,9 +878,9 @@ class RemoteAccess:
 
     def base_url(self) -> str:
         """Public base URL: option > HA external URL > Nabu Casa remote UI."""
-        configured = (self.services.options.get("public_url") or "").strip().rstrip("/")
+        configured, _ = normalize_public_url(self.services.options.get("public_url"))
         if configured:
-            return configured if "://" in configured else "https://" + configured
+            return configured
         cached_at, cached = self._base_url_cache
         if time.time() - cached_at < 300:
             return cached
@@ -867,9 +958,7 @@ def run_connection_test() -> dict:
         base = REMOTE.base_url()
         url = f"{base}/api/webhook/{REMOTE.webhook_id}" if base else ""
     else:
-        public = (SERVICES.options.get("public_url") or "").strip().rstrip("/")
-        if public and "://" not in public:
-            public = "https://" + public
+        public, _ = normalize_public_url(SERVICES.options.get("public_url"))
         url = f"{public}/{SERVICES.secret}/mcp" if public else ""
     if not url:
         add("test_public", False, "@no_public")
@@ -1051,9 +1140,9 @@ TEXT = {
         "hide": "Hide",
         "copy": "Copy",
         "copied": "Copied",
-        "no_public_url": "Set “Public base URL” in the configuration to see the full address. Until then, replace the domain placeholder.",
+        "no_public_url": "Set “Public address” in the configuration to see the full address. Until then, replace the domain placeholder.",
         "internal_url": "Target for your tunnel / reverse proxy",
-        "internal_hint": "Point a public HTTPS hostname (e.g. in the Cloudflared add-on) at this address. Never publish port 8100 without HTTPS.",
+        "internal_hint": "Point a public HTTPS hostname (e.g. in the Cloudflared app) at this address. Never publish port 8100 without HTTPS.",
         "secret_warning": "Anyone who knows this URL can use your Garmin account through the AI tools. Treat it like a password.",
         "rotate": "Generate new secret URL",
         "rotate_confirm": "Generate a new secret URL? The old one stops working immediately and you must update your connectors.",
@@ -1071,12 +1160,12 @@ TEXT = {
         "ok_rotate": "New secret URL generated. Update your connectors.",
         "ok_restart": "Home Assistant is restarting. Reload this page in a minute.",
         "upload_hint": "To let the AI create workouts on your watch, Garmin needs your consent to data uploads (required for EU accounts): Garmin Connect → Settings → Privacy settings → Data → “Upload device data” must be on. If your watch already syncs to Garmin Connect, this is usually already the case.",
-        "oauth_hint": "If you also use the ha-mcp add-on with its webhook proxy, your AI app may ask you to log in to your Home Assistant and grant access when adding the connector. That comes from ha-mcp and is harmless – just confirm it.",
+        "oauth_hint": "If you also use the ha-mcp app with its webhook proxy, your AI app may ask you to log in to your Home Assistant and grant access when adding the connector. That comes from ha-mcp and is harmless – just confirm it.",
         "login_busy": "Please wait …",
         "login_wait": "Logging in to Garmin – this can take up to 30 seconds. Please don't click again.",
         "restart_banner_title": "Restart of Home Assistant required",
         "restart_busy": "Restarting …",
-        "custom_selection": "custom selection (add-on page)",
+        "custom_selection": "custom selection (app page)",
         "what_ai_may": "What the AI may do",
         "nothing": "nothing",
         "kind_read": "read",
@@ -1107,6 +1196,9 @@ TEXT = {
         "ok_tools_reset": "Selection reset – the configuration applies again.",
         "cleaned_up": "Remote access is set to “direct”: the helper integration for the webhook was removed from Home Assistant. No restart needed.",
         "new_tools_hint": "{n} new tools since you saved your selection – they are switched off.",
+        "unknown_tools": "These tool names in the configuration do not exist and are ignored (typo?):",
+        "public_url_http": "The public address uses http://. Most AI apps only accept https:// connectors.",
+        "public_url_invalid": "The “Public address” in the configuration is not a valid web address and is ignored. Example: https://home.example.com",
         "new_tools_banner": "An update added {n} new tools (marked “new”). They stay switched off until you tick them and save.",
         "new": "new",
         "review": "Review",
@@ -1129,10 +1221,10 @@ TEXT = {
         "remote_restart_needed": "Home Assistant must be restarted once",
         "remote_error": "Error",
         "remote_disabled": "Off",
-        "restart_hint": "The add-on has installed or updated its small helper integration for remote access. Home Assistant loads it only after a restart – until then the connector cannot work. Logging in to Garmin already works.",
+        "restart_hint": "The app has installed or updated its small helper integration for remote access. Home Assistant loads it only after a restart – until then the connector cannot work. Logging in to Garmin already works.",
         "restart_ha": "Restart Home Assistant now",
         "restart_confirm": "Restart Home Assistant now? It will be unavailable for about a minute.",
-        "no_base_url": "Home Assistant has no external URL configured. Set it under Settings → System → Network, or enter it as “Public base URL” in the add-on configuration – until then, replace the placeholder.",
+        "no_base_url": "Home Assistant has no external URL configured. Set it under Settings → System → Network, or enter it as “Public address” in the app configuration – until then, replace the placeholder.",
     },
     "de": {
         "title": "Garmin Connect MCP",
@@ -1169,7 +1261,7 @@ TEXT = {
         "copied": "Kopiert",
         "no_public_url": "Trage in der Konfiguration die „Öffentliche Adresse“ ein, dann siehst du hier die vollständige URL. Bis dahin den Domain-Platzhalter ersetzen.",
         "internal_url": "Ziel für deinen Tunnel / Reverse Proxy",
-        "internal_hint": "Leite einen öffentlichen HTTPS-Hostnamen (z. B. im Cloudflared-Add-on) auf diese Adresse. Port 8100 nie ohne HTTPS freigeben.",
+        "internal_hint": "Leite einen öffentlichen HTTPS-Hostnamen (z. B. in der Cloudflared-App) auf diese Adresse. Port 8100 nie ohne HTTPS freigeben.",
         "secret_warning": "Wer diese URL kennt, kann über die KI-Tools auf dein Garmin-Konto zugreifen. Behandle sie wie ein Passwort.",
         "rotate": "Neue geheime URL erzeugen",
         "rotate_confirm": "Neue geheime URL erzeugen? Die alte funktioniert sofort nicht mehr und du musst deine Connectors anpassen.",
@@ -1187,12 +1279,12 @@ TEXT = {
         "ok_rotate": "Neue geheime URL erzeugt. Passe deine Connectors an.",
         "ok_restart": "Home Assistant startet neu. Lade diese Seite in einer Minute neu.",
         "upload_hint": "Damit die KI Workouts auf deine Uhr bringen kann, braucht Garmin deine Zustimmung zum Hochladen (Pflicht bei EU-Konten): Garmin Connect → Einstellungen → Datenschutzeinstellungen → Daten → „Gerätedaten hochladen“ muss aktiv sein. Synchronisiert deine Uhr schon mit Garmin Connect, ist das meist bereits der Fall.",
-        "oauth_hint": "Nutzt du zusätzlich das Add-on ha-mcp mit seinem Webhook-Proxy, fragt deine KI-App beim Hinzufügen des Connectors eventuell nach einer Anmeldung bei deinem Home Assistant und einer Zugriffsfreigabe. Das kommt von ha-mcp und ist unbedenklich – einfach bestätigen.",
+        "oauth_hint": "Nutzt du zusätzlich die App ha-mcp mit seinem Webhook-Proxy, fragt deine KI-App beim Hinzufügen des Connectors eventuell nach einer Anmeldung bei deinem Home Assistant und einer Zugriffsfreigabe. Das kommt von ha-mcp und ist unbedenklich – einfach bestätigen.",
         "login_busy": "Bitte warten …",
         "login_wait": "Anmeldung bei Garmin läuft – das kann bis zu 30 Sekunden dauern. Bitte nicht erneut klicken.",
         "restart_banner_title": "Neustart von Home Assistant erforderlich",
         "restart_busy": "Startet neu …",
-        "custom_selection": "eigene Auswahl (Add-on-Seite)",
+        "custom_selection": "eigene Auswahl (App-Seite)",
         "what_ai_may": "Was die KI darf",
         "nothing": "nichts",
         "kind_read": "lesen",
@@ -1223,6 +1315,9 @@ TEXT = {
         "ok_tools_reset": "Auswahl zurückgesetzt – es gilt wieder die Konfiguration.",
         "cleaned_up": "Fernzugriff steht auf „direct“: Die Hilfs-Integration für den Webhook wurde aus Home Assistant entfernt. Ein Neustart ist nicht nötig.",
         "new_tools_hint": "{n} neue Tools seit deiner gespeicherten Auswahl – sie sind ausgeschaltet.",
+        "unknown_tools": "Diese Tool-Namen aus der Konfiguration gibt es nicht, sie werden ignoriert (Tippfehler?):",
+        "public_url_http": "Die öffentliche Adresse beginnt mit http://. Die meisten KI-Apps akzeptieren nur https://-Connectoren.",
+        "public_url_invalid": "Die „Öffentliche Adresse“ in der Konfiguration ist keine gültige Webadresse und wird ignoriert. Beispiel: https://home.example.com",
         "new_tools_banner": "Ein Update hat {n} neue Tools gebracht (markiert mit „neu“). Sie bleiben aus, bis du sie anhakst und speicherst.",
         "new": "neu",
         "review": "Ansehen",
@@ -1245,10 +1340,10 @@ TEXT = {
         "remote_restart_needed": "Home Assistant muss einmal neu gestartet werden",
         "remote_error": "Fehler",
         "remote_disabled": "Aus",
-        "restart_hint": "Das Add-on hat seine kleine Hilfs-Integration für den Fernzugriff installiert bzw. aktualisiert. Home Assistant lädt sie erst nach einem Neustart – bis dahin kann der Connector nicht funktionieren. Die Anmeldung bei Garmin geht schon.",
+        "restart_hint": "Die App hat ihre kleine Hilfs-Integration für den Fernzugriff installiert bzw. aktualisiert. Home Assistant lädt sie erst nach einem Neustart – bis dahin kann der Connector nicht funktionieren. Die Anmeldung bei Garmin geht schon.",
         "restart_ha": "Home Assistant jetzt neu starten",
         "restart_confirm": "Home Assistant jetzt neu starten? Es ist dann etwa eine Minute nicht erreichbar.",
-        "no_base_url": "In Home Assistant ist keine externe Adresse hinterlegt. Trage sie unter Einstellungen → System → Netzwerk ein oder in der Add-on-Konfiguration als „Öffentliche Adresse“ – bis dahin den Platzhalter ersetzen.",
+        "no_base_url": "In Home Assistant ist keine externe Adresse hinterlegt. Trage sie unter Einstellungen → System → Netzwerk ein oder in der App-Konfiguration als „Öffentliche Adresse“ – bis dahin den Platzhalter ersetzen.",
     },
 }
 
@@ -1429,6 +1524,11 @@ async def index(request: Request) -> Response:
         f'<tr><td class="muted">{t["write_access"]}</td><td>{rights}</td></tr>'
         f'</table>'
         + (f'<p class="warn">{t["new_tools_hint"].format(n=len(fresh))} <a href="tools">{t["review"]}</a></p>' if (fresh := new_tools()) else "")
+        + (
+            f'<p class="warn">{t["unknown_tools"]} <code>{html.escape(", ".join(unknown))}</code></p>'
+            if not custom and (unknown := unknown_tool_names(services.options))
+            else ""
+        )
         + f'<h3>{t["what_ai_may"]}</h3><table class="cats">{"".join(rows)}</table>'
         f'<div class="row links"><a class="btn" href="tools">{t["choose_tools"]}</a>'
         f'<a class="btn secondary" href="{_config_url()}" target="_top">{t["open_config"]}</a></div></div>'
@@ -1455,9 +1555,7 @@ async def index(request: Request) -> Response:
 
     # Connection card
     remote = REMOTE
-    direct_public = (services.options.get("public_url") or "").strip().rstrip("/")
-    if direct_public and "://" not in direct_public:
-        direct_public = "https://" + direct_public
+    direct_public, url_problem = normalize_public_url(services.options.get("public_url"))
     direct_url = f"{direct_public or 'https://<your-domain>'}/{services.secret}/mcp"
     internal = f"http://{socket.gethostname()}:{PUBLIC_PORT}"
     rotate_form = (
@@ -1465,6 +1563,8 @@ async def index(request: Request) -> Response:
         f'<button type="submit" class="secondary">{t["rotate"]}</button></form>'
     )
     parts.append(f'<div class="card"><h2>{t["connection"]}</h2>')
+    if url_problem:
+        parts.append(f'<p class="warn">{t["public_url_" + url_problem]}</p>')
     if remote.enabled:
         base = await anyio.to_thread.run_sync(remote.base_url)
         url = f"{base or 'https://<your-home-assistant>'}/api/webhook/{remote.webhook_id}"
@@ -1711,6 +1811,37 @@ async def status(request: Request) -> Response:
     )
 
 
+SECURITY_HEADERS = {
+    # The page shows secrets (connector URL): never cache it, never leak it
+    # via the Referer header, only allow Home Assistant to frame it.
+    "Cache-Control": "no-store",
+    "Referrer-Policy": "no-referrer",
+    "X-Content-Type-Options": "nosniff",
+    "Content-Security-Policy": "frame-ancestors 'self'; base-uri 'none'; form-action 'self'; object-src 'none'",
+}
+
+
+class SecurityHeaders:
+    def __init__(self, app):
+        self.app = app
+
+    async def __call__(self, scope, receive, send):
+        if scope["type"] != "http":
+            return await self.app(scope, receive, send)
+
+        async def send_with_headers(message):
+            if message["type"] == "http.response.start":
+                headers = list(message.get("headers", []))
+                present = {k.lower() for k, _ in headers}
+                for key, value in SECURITY_HEADERS.items():
+                    if key.lower().encode() not in present:
+                        headers.append((key.lower().encode(), value.encode()))
+                message = {**message, "headers": headers}
+            await send(message)
+
+        await self.app(scope, receive, send_with_headers)
+
+
 app = Starlette(
     routes=[
         Route("/", index),
@@ -1725,7 +1856,8 @@ app = Starlette(
         Route("/tools", tools_page),
         Route("/tools", save_tools, methods=["POST"]),
         Route("/tools/reset", reset_tools, methods=["POST"]),
-    ]
+    ],
+    middleware=[Middleware(SecurityHeaders)],
 )
 
 

@@ -2,6 +2,20 @@
 
 ## Unreleased
 
+Configuration
+- Every option now explains each value in the Home Assistant UI (German and English), e.g.
+  which tools each area contains.
+- New option `keep_downloads_days` (default 7): downloaded FIT/GPX files are deleted after
+  that many days. Downloads are no longer part of Home Assistant backups.
+- New option `login_notification` (default on) to switch off the notification about login problems.
+- `public_url` accepts a copied browser address (only scheme and host are used); the app page
+  warns if it is invalid or uses `http://`.
+- Typos in `enable_tools` / `disable_tools` are shown as a warning on the app page.
+- Area `workouts` now includes `push_workout_to_device` and `reschedule_workout` (still subject
+  to `write_access`) – previously workouts could not be sent to the watch without `enable_tools`.
+- Texts use the current Home Assistant term "app" instead of "add-on".
+- Security: the app page is never cached, sends no referrer and can only be embedded by Home Assistant.
+
 - Security: nginx could write the secret path to the add-on log when the server was not
   reachable for a moment (e.g. during a restart). nginx now only logs critical errors.
   If you shared your add-on log, generate a new secret URL.
