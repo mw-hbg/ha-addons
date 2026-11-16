@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.5.0
 
 - Security: the app now has its own AppArmor profile (security rating 8 of 8 in Home
   Assistant). The kernel limits every process of the app – including its internal part –
