@@ -50,6 +50,8 @@ from garmin_mcp.tool_annotations import (
 )
 from garmin_mcp.tool_profiles import resolve_tool_profile
 
+import tool_texts
+
 # --------------------------------------------------------------------------
 # Paths and constants
 # --------------------------------------------------------------------------
@@ -77,6 +79,54 @@ WEBHOOK_ID_FILE = DATA / "webhook_id"
 WEBHOOK_DOMAIN = "garmin_mcp_webhook"
 
 ALL_TOOLS = READ_ONLY_TOOLS | ADDITIVE_TOOLS | DESTRUCTIVE_TOOLS
+SELECTION_FILE = DATA / "tool_selection.json"
+
+
+def _build_catalog() -> list[dict]:
+    """Every upstream tool with its category and description (no Garmin login needed)."""
+    import inspect
+    import importlib
+
+    entries: list[dict] = []
+
+    class _Collector:
+        def __init__(self, module: str) -> None:
+            self.module = module
+
+        def tool(self, *args, **kwargs):
+            def wrap(fn):
+                name = kwargs.get("name") or (args[0] if args and isinstance(args[0], str) else fn.__name__)
+                doc = (inspect.getdoc(fn) or "").split("\n\n")[0].replace("\n", " ").strip()
+                entries.append({"name": name, "module": self.module, "doc": doc})
+                return fn
+            return wrap
+
+        def __getattr__(self, _name):
+            return lambda *a, **k: (lambda fn: fn)
+
+    for module in tool_texts.CATEGORIES:
+        try:
+            importlib.import_module(f"garmin_mcp.{module}").register_tools(_Collector(module))
+        except Exception as exc:  # noqa: BLE001
+            log.warning("Could not read tool list of %s: %s", module, exc)
+    for entry in entries:
+        name = entry["name"]
+        entry["kind"] = (
+            "read" if name in READ_ONLY_TOOLS else "create" if name in ADDITIVE_TOOLS else "change"
+        )
+    return entries
+
+
+CATALOG: list[dict] = []  # filled in main()
+
+
+def load_selection() -> set[str] | None:
+    """Tools picked on the add-on page, or None if the user never saved a selection."""
+    try:
+        names = json.loads(SELECTION_FILE.read_text())
+    except (FileNotFoundError, ValueError):
+        return None
+    return {str(n) for n in names} & ALL_TOOLS
 MFA_TIMEOUT = 600  # seconds a started MFA login stays valid
 
 log = logging.getLogger("garmin_mcp_addon")
@@ -113,6 +163,9 @@ def _names(values) -> set[str]:
 
 def tool_selection(options: dict) -> tuple[dict, set[str]]:
     """Return (environment for garmin-mcp, set of tools that will be active)."""
+    picked = load_selection()
+    if picked is not None:
+        return {"GARMIN_DISABLED_TOOLS": ",".join(sorted(ALL_TOOLS - picked))}, picked
     areas = [a.strip().lower() for a in options.get("tool_areas") or ["all"] if a.strip()]
     if not areas or "all" in areas:
         areas = ["all"]
@@ -327,6 +380,10 @@ class Services:
         self.stop_mcp()
         self._mcp_failures = 0
         self.start_mcp()
+
+    def reload_tools(self) -> None:
+        self.mcp_env, self.active_tools = tool_selection(self.options)
+        self.restart_mcp()
 
     def mcp_state(self) -> str:
         """'stopped', 'pending', 'ready' or 'failed'."""
@@ -723,7 +780,7 @@ TEXT = {
         "wa_read_only": "read only",
         "wa_create_only": "create, but never delete or overwrite",
         "wa_full": "full (incl. delete and edit)",
-        "options_hint": "Change areas and write access in the add-on Configuration tab.",
+        "options_hint": "",
         "connection": "Connect your AI assistant",
         "connector_url": "Connector URL",
         "show": "Show",
@@ -754,6 +811,35 @@ TEXT = {
         "login_wait": "Logging in to Garmin – this can take up to 30 seconds. Please don't click again.",
         "restart_banner_title": "Restart of Home Assistant required",
         "restart_busy": "Restarting …",
+        "custom_selection": "custom selection (add-on page)",
+        "what_ai_may": "What the AI may do",
+        "nothing": "nothing",
+        "kind_read": "read",
+        "kind_create": "create",
+        "kind_change": "change/delete",
+        "choose_tools": "Choose tools",
+        "open_config": "Open configuration",
+        "tools_title": "Choose tools",
+        "back": "← Back",
+        "search": "Search tools …",
+        "selected": "selected",
+        "preset": "Presets:",
+        "preset_read": "Read only",
+        "preset_create": "Create, never delete (recommended)",
+        "preset_all": "Everything",
+        "preset_none": "Nothing",
+        "save": "Save and restart server",
+        "reset": "Reset to configuration",
+        "reset_confirm": "Discard your selection and use the areas and write access from the configuration again?",
+        "tools_intro": "Tick what the AI may use. ⓘ explains each tool. Saving restarts the server; afterwards your AI app may need a moment to see the new tool list.",
+        "info_name": "Technical name",
+        "info_kind": "Access",
+        "info_kind_read": "Only reads data from Garmin Connect.",
+        "info_kind_create": "Adds something new to Garmin Connect (e.g. a workout or an entry), never deletes or overwrites.",
+        "info_kind_change": "Changes, overwrites or deletes existing data – or saves files. Allow deliberately.",
+        "info_original": "Original description",
+        "ok_tools": "Selection saved. The server is restarting.",
+        "ok_tools_reset": "Selection reset – the configuration applies again.",
         "remote": "Remote access",
         "remote_active": "Active – via your Home Assistant address",
         "remote_setting_up": "Setting up …",
@@ -791,7 +877,7 @@ TEXT = {
         "wa_read_only": "nur lesen",
         "wa_create_only": "anlegen, aber nie löschen oder überschreiben",
         "wa_full": "voll (inkl. Löschen und Bearbeiten)",
-        "options_hint": "Bereiche und Schreibrechte änderst du im Add-on unter „Konfiguration“.",
+        "options_hint": "",
         "connection": "KI-Assistent verbinden",
         "connector_url": "Connector-URL",
         "show": "Anzeigen",
@@ -822,6 +908,35 @@ TEXT = {
         "login_wait": "Anmeldung bei Garmin läuft – das kann bis zu 30 Sekunden dauern. Bitte nicht erneut klicken.",
         "restart_banner_title": "Neustart von Home Assistant erforderlich",
         "restart_busy": "Startet neu …",
+        "custom_selection": "eigene Auswahl (Add-on-Seite)",
+        "what_ai_may": "Was die KI darf",
+        "nothing": "nichts",
+        "kind_read": "lesen",
+        "kind_create": "anlegen",
+        "kind_change": "ändern/löschen",
+        "choose_tools": "Tools auswählen",
+        "open_config": "Konfiguration öffnen",
+        "tools_title": "Tools auswählen",
+        "back": "← Zurück",
+        "search": "Tools durchsuchen …",
+        "selected": "ausgewählt",
+        "preset": "Vorlagen:",
+        "preset_read": "Nur lesen",
+        "preset_create": "Anlegen, nie löschen (empfohlen)",
+        "preset_all": "Alles",
+        "preset_none": "Nichts",
+        "save": "Speichern und Server neu starten",
+        "reset": "Auf Konfiguration zurücksetzen",
+        "reset_confirm": "Deine Auswahl verwerfen und wieder Bereiche und Schreibrechte aus der Konfiguration verwenden?",
+        "tools_intro": "Hake an, was die KI nutzen darf. ⓘ erklärt jedes Tool. Beim Speichern startet der Server neu; deine KI-App braucht danach eventuell einen Moment, bis sie die neue Liste kennt.",
+        "info_name": "Technischer Name",
+        "info_kind": "Zugriff",
+        "info_kind_read": "Liest nur Daten aus Garmin Connect.",
+        "info_kind_create": "Legt etwas Neues in Garmin Connect an (z. B. ein Workout oder einen Eintrag), löscht oder überschreibt nie etwas.",
+        "info_kind_change": "Ändert, überschreibt oder löscht vorhandene Daten – oder speichert Dateien. Bewusst freigeben.",
+        "info_original": "Originalbeschreibung",
+        "ok_tools": "Auswahl gespeichert. Der Server startet neu.",
+        "ok_tools_reset": "Auswahl zurückgesetzt – es gilt wieder die Konfiguration.",
         "remote": "Fernzugriff",
         "remote_active": "Aktiv – über deine Home-Assistant-Adresse",
         "remote_setting_up": "Wird eingerichtet …",
@@ -852,6 +967,22 @@ button{margin-top:14px;padding:9px 16px;border:0;border-radius:8px;background:va
 button.secondary{background:transparent;color:var(--accent);border:1px solid var(--border)}
 .row{display:flex;gap:8px;align-items:center;flex-wrap:wrap}.row button{margin-top:0}
 code{display:block;padding:9px 11px;border-radius:8px;border:1px solid var(--border);word-break:break-all;font-size:13px;flex:1;min-width:0}
+h3{font-size:15px;margin:18px 0 8px}
+.cats td{padding:4px 14px 4px 0}.num{color:var(--muted);white-space:nowrap}
+.badge{display:inline-block;font-size:11px;padding:1px 7px;border-radius:10px;margin-right:4px;border:1px solid}
+.badge.read{color:var(--ok);border-color:var(--ok)}.badge.create{color:var(--accent);border-color:var(--accent)}.badge.change{color:var(--err);border-color:var(--err)}
+a.btn{display:inline-block;margin-top:14px;padding:9px 16px;border-radius:8px;background:var(--accent);color:#fff;text-decoration:none;font-size:14px}
+a.btn.secondary{background:transparent;color:var(--accent);border:1px solid var(--border)}
+@media (prefers-color-scheme:dark){a.btn{color:#111}a.btn.secondary{color:var(--accent)}}
+.links{gap:10px}
+.toolbar{position:sticky;top:0;background:var(--bg);padding:10px 0;z-index:2}
+.tool{display:flex;gap:10px;align-items:flex-start;padding:8px 0;border-top:1px solid var(--border)}
+.tool input{width:auto;margin-top:3px}.tool .txt{flex:1}.tool code{display:inline;border:0;padding:0;font-size:12px;color:var(--muted)}
+.info{background:none;border:1px solid var(--border);color:var(--accent);border-radius:50%;width:24px;height:24px;padding:0;margin:0;font-size:13px;line-height:22px;flex:none}
+.infobox{display:none;margin-top:6px;padding:8px 10px;border-radius:8px;border:1px solid var(--border);font-size:13px}
+.infobox.open{display:block}
+summary{cursor:pointer;font-weight:600;padding:6px 0}
+.savebar{position:sticky;bottom:0;background:var(--bg);padding:10px 0;display:flex;gap:10px;flex-wrap:wrap;align-items:center}
 .busy-note{display:none;margin-top:10px}button:disabled{opacity:.6;cursor:wait}
 .banner{padding:14px 16px;border-radius:12px;margin-bottom:16px;border:2px solid var(--warn)}
 .flash{padding:10px 14px;border-radius:8px;margin-bottom:16px;border:1px solid var(--border)}
@@ -866,6 +997,12 @@ form.dataset.busy='1';if(b){b.disabled=true;b.textContent=b.dataset.busy||b.text
 const n=form.querySelector('.busy-note');if(n){n.style.display='block'}return true}
 function copyVal(id,btn){navigator.clipboard.writeText(document.getElementById(id).dataset.value).then(()=>{const t=btn.textContent;btn.textContent=btn.dataset.done;setTimeout(()=>btn.textContent=t,1500)})}
 """
+
+
+def _config_url() -> str:
+    """Link to this add-on's configuration tab in the Home Assistant UI."""
+    slug = socket.gethostname().replace("-", "_")
+    return f"/config/app/{slug}/config"
 
 
 def _lang(request: Request) -> str:
@@ -964,13 +1101,31 @@ async def index(request: Request) -> Response:
     # Server card
     state = await anyio.to_thread.run_sync(services.mcp_state)
     state_cls = {"ready": "ok", "failed": "err", "pending": "warn"}.get(state, "muted")
+    custom = SELECTION_FILE.exists()
     wa = services.options.get("write_access", "create_only")
+    rights = t["custom_selection"] if custom else t.get("wa_" + wa, wa)
+    lang = _lang(request)
+    rows = []
+    for module, (_, en, de) in sorted(tool_texts.CATEGORIES.items(), key=lambda kv: kv[1][0]):
+        tools_in = [e for e in CATALOG if e["module"] == module]
+        if not tools_in:
+            continue
+        on = [e for e in tools_in if e["name"] in services.active_tools]
+        kinds = {e["kind"] for e in on}
+        badges = "".join(
+            f'<span class="badge {k}">{t["kind_" + k]}</span>' for k in ("read", "create", "change") if k in kinds
+        ) or f'<span class="muted">{t["nothing"]}</span>'
+        rows.append(
+            f'<tr><td>{de if lang == "de" else en}</td><td class="num">{len(on)}/{len(tools_in)}</td><td>{badges}</td></tr>'
+        )
     parts.append(
         f'<div class="card"><h2>{t["server"]}</h2><table>'
         f'<tr><td class="muted">{t["state"]}</td><td class="{state_cls}">{t["state_" + state]}</td></tr>'
         f'<tr><td class="muted">{t["tools"]}</td><td>{len(services.active_tools)} / {len(ALL_TOOLS)}</td></tr>'
-        f'<tr><td class="muted">{t["write_access"]}</td><td>{t.get("wa_" + wa, wa)}</td></tr>'
-        f'</table><p class="muted">{t["options_hint"]}</p></div>'
+        f'<tr><td class="muted">{t["write_access"]}</td><td>{rights}</td></tr>'
+        f'</table><h3>{t["what_ai_may"]}</h3><table class="cats">{"".join(rows)}</table>'
+        f'<div class="row links"><a class="btn" href="tools">{t["choose_tools"]}</a>'
+        f'<a class="btn secondary" href="{_config_url()}" target="_top">{t["open_config"]}</a></div></div>'
     )
 
     # Connection card
@@ -1094,6 +1249,109 @@ async def do_restart_ha(request: Request) -> Response:
     return _redirect(request)
 
 
+def _page(request: Request, t: dict, body: str, extra_js: str = "") -> HTMLResponse:
+    return HTMLResponse(
+        f'<!doctype html><html lang="{_lang(request)}"><head><meta charset="utf-8">'
+        f'<meta name="viewport" content="width=device-width,initial-scale=1">'
+        f"<title>{t['title']}</title><style>{CSS}</style></head>"
+        f"<body><main>{body}</main><script>{JS}{extra_js}</script></body></html>",
+        headers={"Cache-Control": "no-store", "X-Frame-Options": "SAMEORIGIN"},
+    )
+
+
+TOOLS_JS = """
+function q(s){return Array.from(document.querySelectorAll(s))}
+function count(){const n=q('.tool input:checked').length;document.getElementById('cnt').textContent=n;
+q('details').forEach(d=>{const all=d.querySelectorAll('.tool input').length,on=d.querySelectorAll('.tool input:checked').length;d.querySelector('.ccount').textContent=on+'/'+all})}
+function preset(kinds){q('.tool input').forEach(c=>c.checked=kinds.includes(c.dataset.kind));count()}
+function filt(v){v=v.toLowerCase();q('.tool').forEach(r=>{r.style.display=r.dataset.search.includes(v)?'':'none'});
+q('details').forEach(d=>{const vis=Array.from(d.querySelectorAll('.tool')).some(r=>r.style.display!=='none');d.style.display=vis?'':'none';if(v)d.open=true})}
+function info(b){b.closest('.tool').querySelector('.infobox').classList.toggle('open')}
+document.addEventListener('change',e=>{if(e.target.matches('.tool input'))count()});count();
+"""
+
+
+async def tools_page(request: Request) -> Response:
+    if (denied := _guard(request)) is not None:
+        return denied
+    t = TEXT[_lang(request)]
+    lang = _lang(request)
+    active = SERVICES.active_tools
+    csrf = f'<input type="hidden" name="csrf" value="{CSRF_TOKEN}">'
+    parts = [f'<p><a href="./">{t["back"]}</a></p><h1>{t["tools_title"]}</h1>']
+    if FLASH:
+        parts.append(f'<div class="flash {FLASH.get("kind", "ok")}">{t.get(FLASH.get("key", ""), "")}</div>')
+        FLASH.clear()
+    parts.append(
+        f'<p class="muted">{t["tools_intro"]}</p>'
+        f'<div class="toolbar"><input type="search" placeholder="{t["search"]}" oninput="filt(this.value)">'
+        f'<div class="row" style="margin-top:8px"><span class="muted">{t["preset"]}</span>'
+        f'<button type="button" class="secondary" onclick="preset([\'read\'])">{t["preset_read"]}</button>'
+        f'<button type="button" class="secondary" onclick="preset([\'read\',\'create\'])">{t["preset_create"]}</button>'
+        f'<button type="button" class="secondary" onclick="preset([\'read\',\'create\',\'change\'])">{t["preset_all"]}</button>'
+        f'<button type="button" class="secondary" onclick="preset([])">{t["preset_none"]}</button></div></div>'
+        f'<form method="post" action="tools" onsubmit="return busy(this)">{csrf}'
+    )
+    for module, (_, en, de) in sorted(tool_texts.CATEGORIES.items(), key=lambda kv: kv[1][0]):
+        entries = sorted((e for e in CATALOG if e["module"] == module), key=lambda e: ("read", "create", "change").index(e["kind"]))
+        if not entries:
+            continue
+        parts.append(f'<details class="card" open><summary>{de if lang == "de" else en} <span class="muted ccount"></span></summary>')
+        for e in entries:
+            label = tool_texts.DE.get(e["name"], e["doc"]) if lang == "de" else (e["doc"] or e["name"])
+            search = html.escape(f'{e["name"]} {label} {e["doc"]} {de} {en}'.lower(), quote=True)
+            checked = " checked" if e["name"] in active else ""
+            parts.append(
+                f'<div class="tool" data-search="{search}">'
+                f'<input type="checkbox" name="tool" value="{e["name"]}" data-kind="{e["kind"]}" id="t_{e["name"]}"{checked}>'
+                f'<div class="txt"><label for="t_{e["name"]}" style="margin:0;color:inherit;font-size:14px">{html.escape(label)}</label>'
+                f' <span class="badge {e["kind"]}">{t["kind_" + e["kind"]]}</span>'
+                f'<div class="infobox"><b>{t["info_name"]}:</b> <code>{e["name"]}</code><br>'
+                f'<b>{t["info_kind"]}:</b> {t["info_kind_" + e["kind"]]}'
+                + (f'<br><b>{t["info_original"]}:</b> {html.escape(e["doc"])}' if lang == "de" and e["doc"] else "")
+                + '</div></div>'
+                '<button type="button" class="info" onclick="info(this)" aria-label="Info">i</button></div>'
+            )
+        parts.append("</details>")
+    parts.append(
+        f'<div class="savebar"><button type="submit" data-busy="{t["restart_busy"]}">{t["save"]}</button>'
+        f'<span class="muted"><span id="cnt"></span> / {len(CATALOG)} {t["selected"]}</span></div></form>'
+    )
+    if SELECTION_FILE.exists():
+        parts.append(
+            f'<form method="post" action="tools/reset" onsubmit="return confirm(\'{t["reset_confirm"]}\')">{csrf}'
+            f'<button type="submit" class="secondary">{t["reset"]}</button></form>'
+        )
+    return _page(request, t, "".join(parts), TOOLS_JS)
+
+
+async def save_tools(request: Request) -> Response:
+    if (denied := _guard(request)) is not None:
+        return denied
+    form = await request.form()
+    if not secrets.compare_digest(str(form.get("csrf", "")), CSRF_TOKEN):
+        FLASH.update(kind="err", key="err_csrf")
+    else:
+        picked = sorted({str(v) for v in form.getlist("tool")} & ALL_TOOLS)
+        SELECTION_FILE.write_text(json.dumps(picked))
+        log.info("Tool selection saved (%d tools)", len(picked))
+        await anyio.to_thread.run_sync(SERVICES.reload_tools)
+        FLASH.update(kind="ok", key="ok_tools")
+    base = request.headers.get("x-ingress-path", "")
+    return RedirectResponse(f"{base}/", status_code=303)
+
+
+async def reset_tools(request: Request) -> Response:
+    if (denied := _guard(request)) is not None:
+        return denied
+    if await _form(request) is not None:
+        SELECTION_FILE.unlink(missing_ok=True)
+        await anyio.to_thread.run_sync(SERVICES.reload_tools)
+        FLASH.update(kind="ok", key="ok_tools_reset")
+    base = request.headers.get("x-ingress-path", "")
+    return RedirectResponse(f"{base}/tools", status_code=303)
+
+
 async def status(request: Request) -> Response:
     if (denied := _guard(request)) is not None:
         return denied
@@ -1118,6 +1376,9 @@ app = Starlette(
         Route("/rotate", do_rotate, methods=["POST"]),
         Route("/restart-ha", do_restart_ha, methods=["POST"]),
         Route("/status.json", status),
+        Route("/tools", tools_page),
+        Route("/tools", save_tools, methods=["POST"]),
+        Route("/tools/reset", reset_tools, methods=["POST"]),
     ]
 )
 
@@ -1134,6 +1395,8 @@ def main() -> None:
     )
     DATA.mkdir(parents=True, exist_ok=True)
 
+    global CATALOG
+    CATALOG = _build_catalog()
     SERVICES = Services()
     SERVICES.start_nginx()
     SERVICES.start_mcp()

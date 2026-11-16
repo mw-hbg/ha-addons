@@ -130,6 +130,18 @@ Copy the **Connector URL** from the add-on page. It looks like
   published IP addresses). Other AI services use other ranges and would be
   blocked by such a rule. Test after enabling it.
 
+## Choosing tools
+
+The add-on page shows, per category, what the AI may do. **Choose tools** opens
+a list of all tools grouped by category, with a search field, presets
+(*read only*, *create, never delete*, *everything*, *nothing*), a checkbox per
+tool and an **i** button explaining what each tool does and what kind of access
+it needs (read / create / change-delete). Saving restarts the server.
+
+A saved selection replaces `tool_areas`, `write_access`, `enable_tools` and
+`disable_tools` from the configuration. **Reset to configuration** on that page
+brings those options back into effect.
+
 ## Configuration
 
 | Option | Description |

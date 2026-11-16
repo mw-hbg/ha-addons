@@ -1,6 +1,14 @@
 # Changelog
 
-## Unreleased
+## 0.2.2
+
+- New page "Choose tools": all tools grouped by category with search, presets (read only /
+  create, never delete / everything / nothing), a checkbox per tool and an info box explaining
+  what it does and what kind of access it needs. A saved selection replaces the tool options
+  from the configuration (can be reset).
+- The add-on page shows per category what the AI may do (read / create / change-delete) and
+  links to the tool selection and to the add-on configuration.
+- German descriptions for all tools.
 
 - The add-on page refreshes itself every few seconds while the server is starting, so the
   status switches to "Ready" without reloading by hand.

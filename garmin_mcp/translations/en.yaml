@@ -5,6 +5,7 @@ configuration:
     description: >-
       Which areas of Garmin Connect the AI may use. "all" exposes every tool.
       Fewer areas mean fewer tools, which keeps the AI faster and more focused.
+      Ignored once you save your own selection under “Choose tools” on the add-on page.
   write_access:
     name: Write access
     description: >-
@@ -12,14 +13,16 @@ configuration:
       create_only = the AI may additionally create and schedule workouts, send them to your watch
       and add entries, but never delete or overwrite anything (recommended).
       full = also allows deleting and editing (activities, workouts, weigh-ins, …).
+      Ignored once you save your own selection under “Choose tools” on the add-on page.
   enable_tools:
     name: Allow individual tools
     description: >-
       Tool names that should be available even though the write access level blocks them
       (e.g. set_perceived_effort). See the documentation for the tool list.
+      Ignored once you save your own selection under “Choose tools” on the add-on page.
   disable_tools:
     name: Block individual tools
-    description: Tool names that should never be available (e.g. delete_activity).
+    description: Tool names that should never be available (e.g. delete_activity). Ignored once you save your own selection under “Choose tools” on the add-on page.
   remote_access:
     name: Remote access
     description: >-
