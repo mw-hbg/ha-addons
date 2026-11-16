@@ -63,6 +63,11 @@ TOKEN_DIR = DATA / "garmin_tokens"
 SECRET_FILE = DATA / "secret_path"
 ACCOUNT_FILE = DATA / "account.json"
 DOWNLOAD_DIR = DATA / "downloads"
+MCP_HOME = DATA / "mcp_home"
+# The internet-facing MCP server runs as this unprivileged user (created in the
+# Dockerfile). It may only write its tokens, downloads and its home folder –
+# never the Home Assistant configuration folder mapped into the container.
+MCP_USER = "garmin"
 NGINX_CONF = Path("/tmp/garmin-mcp-nginx.conf")
 NGINX_PROXY_CONF = Path("/tmp/garmin-mcp-proxy.conf")
 
@@ -381,6 +386,31 @@ def read_account() -> dict:
         return {}
 
 
+def mcp_identity() -> tuple[int, int] | None:
+    """(uid, gid) of the MCP server user, or None where it does not exist (tests)."""
+    import pwd
+
+    try:
+        entry = pwd.getpwnam(MCP_USER)
+    except KeyError:
+        return None
+    return entry.pw_uid, entry.pw_gid
+
+
+def prepare_mcp_dirs(identity: tuple[int, int] | None) -> None:
+    """Folders the MCP server may write: owned by its user, private."""
+    for folder in (TOKEN_DIR, DOWNLOAD_DIR, MCP_HOME):
+        folder.mkdir(mode=0o700, exist_ok=True)
+        if identity is None:
+            continue
+        uid, gid = identity
+        for root, dirs, files in os.walk(folder, followlinks=False):
+            for name in [*dirs, *files]:
+                os.lchown(os.path.join(root, name), uid, gid)
+        os.chown(folder, uid, gid)
+        os.chmod(folder, 0o700)
+
+
 def secure_dir(path: Path) -> None:
     os.chmod(path, 0o700)
     for entry in path.iterdir():
@@ -461,13 +491,11 @@ class Services:
 
     # nginx ---------------------------------------------------------------
     def write_nginx_conf(self) -> None:
-        NGINX_PROXY_CONF.write_text(NGINX_PROXY.format(mcp_port=MCP_PORT))
-        NGINX_CONF.write_text(
-            NGINX_TEMPLATE.format(
-                public_port=PUBLIC_PORT, mcp_port=MCP_PORT, secret=self.secret
-            )
+        write_private(NGINX_PROXY_CONF, NGINX_PROXY.format(mcp_port=MCP_PORT))
+        write_private(
+            NGINX_CONF,
+            NGINX_TEMPLATE.format(public_port=PUBLIC_PORT, mcp_port=MCP_PORT, secret=self.secret),
         )
-        os.chmod(NGINX_CONF, 0o600)
 
     def start_nginx(self) -> None:
         self.write_nginx_conf()
@@ -490,7 +518,8 @@ class Services:
             if not has_tokens():
                 log.info("Not logged in to Garmin Connect yet – open the app page to log in")
                 return
-            DOWNLOAD_DIR.mkdir(exist_ok=True)
+            identity = mcp_identity()
+            prepare_mcp_dirs(identity)
             env = dict(os.environ)
             env.update(self.mcp_env)
             env.update(
@@ -500,9 +529,9 @@ class Services:
                     "GARMIN_MCP_PORT": str(MCP_PORT),
                     "GARMIN_MCP_STATELESS_HTTP": "true",
                     "GARMINTOKENS": str(TOKEN_DIR),
-                    "GARMINTOKENS_BASE64": str(DATA / "garmin_tokens.b64"),
+                    "GARMINTOKENS_BASE64": str(TOKEN_DIR / "tokens.b64"),
                     "GARMIN_FIT_DOWNLOAD_DIR": str(DOWNLOAD_DIR),
-                    "HOME": str(DATA),
+                    "HOME": str(MCP_HOME),
                 }
             )
             # The MCP server is reachable from the internet and runs tools on
@@ -519,7 +548,12 @@ class Services:
             level = str(self.options.get("log_level", "info")).lower()
             env["GARMIN_APP_LOG_LEVEL"] = "DEBUG" if level == "debug" else "WARNING"
             run_mcp = Path(__file__).resolve().parent / "run_mcp.py"
-            self.mcp = subprocess.Popen([sys.executable, str(run_mcp)], env=env, cwd=str(DOWNLOAD_DIR))
+            drop = {}
+            if identity is not None:
+                drop = {"user": identity[0], "group": identity[1], "extra_groups": [], "umask": 0o077}
+            else:
+                log.warning("User %r missing – the MCP server runs with full rights", MCP_USER)
+            self.mcp = subprocess.Popen([sys.executable, str(run_mcp)], env=env, cwd=str(DOWNLOAD_DIR), **drop)
             log.info(
                 "garmin-mcp started (%d tools active, write access: %s)",
                 len(self.active_tools),
@@ -620,6 +654,11 @@ class Services:
                     self._check_login()
                 except Exception as exc:  # noqa: BLE001
                     log.debug("Login check failed: %s", exc)
+            if ticks % 120 == 1:  # at start, then every 10 minutes
+                try:
+                    refresh_ha_language()
+                except Exception as exc:  # noqa: BLE001
+                    log.debug("Could not read the Home Assistant language: %s", exc)
             if ticks % 720 == 1:  # at start, then once an hour
                 try:
                     prune_downloads(keep_days(self.options))
@@ -657,8 +696,9 @@ class Services:
 # Home Assistant Core API (via Supervisor) and webhook remote access
 # --------------------------------------------------------------------------
 def notification_text(key: str) -> str:
-    """Notifications are shown to everyone, so they use the Home Assistant language."""
-    return i18n.ui(i18n.pick(ha_language()))[key]
+    """Notifications are shown to everyone, so they use the Home Assistant language.
+    Called from background threads only."""
+    return i18n.ui(i18n.pick(refresh_ha_language()))[key]
 
 
 def core_api(method: str, path: str, data: dict | None = None, quiet: bool = False):
@@ -1169,16 +1209,20 @@ LANG_COOKIE = "garmin_mcp_lang"
 _ha_language_cache: tuple[float, str] = (0.0, "")
 
 
-def ha_language() -> str:
-    """Language set in Home Assistant (Settings → System → General)."""
+def refresh_ha_language() -> str:
+    """Ask Home Assistant for its language (Settings → System → General).
+
+    Blocking – only call from a background thread, never from a page request."""
     global _ha_language_cache
-    cached_at, value = _ha_language_cache
-    if time.time() - cached_at < 600:
-        return value
     cfg = core_api("GET", "/config", quiet=True)
-    value = str(cfg.get("language") or "") if isinstance(cfg, dict) else ""
+    value = str(cfg.get("language") or "") if isinstance(cfg, dict) else _ha_language_cache[1]
     _ha_language_cache = (time.time(), value)
     return value
+
+
+def ha_language() -> str:
+    """Last known Home Assistant language; never blocks (refreshed in the background)."""
+    return _ha_language_cache[1]
 
 
 def _lang(request: Request) -> str:
@@ -1195,7 +1239,7 @@ def detail_text(t: dict, detail: str) -> str:
     if not detail.startswith("@"):
         return html.escape(detail)
     key, _, value = detail[1:].partition("|")
-    return html.escape(t.get("detail_" + key, key).format(value=value))
+    return html.escape(t.get("detail_" + key, key).replace("{value}", value))
 
 
 def _language_links(request: Request, current: str) -> str:
@@ -1208,9 +1252,14 @@ def _language_links(request: Request, current: str) -> str:
     return " · ".join(links) if len(links) > 1 else ""
 
 
-def _guard(request: Request) -> Response | None:
+def _guard(request: Request, allow_local: bool = False) -> Response | None:
+    """Only Home Assistant's ingress proxy may use the page.
+
+    127.0.0.1 is allowed only for the health check (status.json): the MCP
+    server runs in the same container, and must not be able to read the page
+    (CSRF token, connector URL) or press its buttons."""
     client = request.client.host if request.client else ""
-    if ALLOW_ANY_UI_CLIENT or client in (INGRESS_PROXY_IP, "127.0.0.1"):
+    if ALLOW_ANY_UI_CLIENT or client == INGRESS_PROXY_IP or (allow_local and client == "127.0.0.1"):
         return None
     return Response("Forbidden", status_code=403)
 
@@ -1612,7 +1661,7 @@ async def set_language(request: Request) -> Response:
 
 
 async def status(request: Request) -> Response:
-    if (denied := _guard(request)) is not None:
+    if (denied := _guard(request, allow_local=True)) is not None:
         return denied
     state = await anyio.to_thread.run_sync(SERVICES.mcp_state)
     return JSONResponse(

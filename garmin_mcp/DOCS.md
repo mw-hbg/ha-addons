@@ -140,7 +140,9 @@ Copy the **Connector URL** from the app page. It looks like
   not touch the configuration folder at all.
 * **The AI cannot reach your files:** file tools (upload a course, download an
   activity) only work inside the app's own download folder. The MCP server gets no
-  access to Home Assistant.
+  access to Home Assistant and runs as an unprivileged user: it can write only its
+  Garmin tokens and downloads – not the Home Assistant configuration folder, not the
+  app's secrets and not the app page.
 * **Choose the write access level deliberately** (see below). `read_only` is the
   safest; `create_only` (default) never deletes or overwrites anything.
 * **Optional extra layer – IP allow list:** if you only use one AI service, you

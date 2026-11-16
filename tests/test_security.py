@@ -25,9 +25,13 @@ def test_mcp_server_gets_no_supervisor_token(monkeypatch):
         def poll(self):
             return None
 
-    def fake_popen(cmd, env=None, cwd=None):
-        captured.update(cmd=cmd, env=env, cwd=cwd)
+    def fake_popen(cmd, env=None, cwd=None, **kwargs):
+        captured.update(cmd=cmd, env=env, cwd=cwd, kwargs=kwargs)
         return FakeProc()
+
+    monkeypatch.setattr(L, "mcp_identity", lambda: (4242, 4243))
+    monkeypatch.setattr(L.os, "lchown", lambda *a: None)
+    monkeypatch.setattr(L.os, "chown", lambda *a: None)
 
     monkeypatch.setattr(L.subprocess, "Popen", fake_popen)
     services = L.Services()
@@ -37,6 +41,10 @@ def test_mcp_server_gets_no_supervisor_token(monkeypatch):
     assert "GARMIN_PASSWORD" not in env
     assert env["GARMINTOKENS"] == str(L.TOKEN_DIR)
     assert captured["cmd"][-1].endswith("run_mcp.py")
+    # runs as the unprivileged user, without extra groups, private files
+    assert captured["kwargs"] == {"user": 4242, "group": 4243, "extra_groups": [], "umask": 0o077}
+    assert env["HOME"] == str(L.MCP_HOME)
+    assert env["GARMINTOKENS_BASE64"].startswith(str(L.TOKEN_DIR))
     (L.TOKEN_DIR / "garmin_tokens.json").unlink()
 
 
@@ -154,3 +162,64 @@ def test_confirm_texts_cannot_break_javascript():
     for code in L.i18n.LANGUAGES:
         for key, value in L.i18n.ui(code).items():
             assert "<" not in value or key in ("tools_intro",), key
+
+
+def test_sync_tools_are_guarded_too(run_mcp):
+    def download_course_gpx(course_id: int, output_path: str = "") -> str:
+        return "written"
+
+    guarded = run_mcp.confine_paths(download_course_gpx)
+    assert "blocked" in json.loads(guarded(1, output_path="/homeassistant/www/x.gpx"))["error"]
+    assert guarded(1, output_path="x.gpx") == "written"
+
+
+def test_page_requests_never_wait_for_home_assistant(monkeypatch):
+    calls = []
+    monkeypatch.setattr(L, "core_api", lambda *a, **k: calls.append(a) or {"language": "de"})
+    L.ha_language()
+    assert calls == []
+    assert L.refresh_ha_language() == "de" and L.ha_language() == "de"
+    monkeypatch.setattr(L, "core_api", lambda *a, **k: None)  # HA unreachable: keep last value
+    assert L.refresh_ha_language() == "de"
+    monkeypatch.setattr(L, "_ha_language_cache", (0.0, ""))
+
+
+def test_translated_details_cannot_crash_the_page():
+    t = {"detail_integration_state": "state {value} {n} {"}
+    assert L.detail_text(t, "@integration_state|loaded") == "state loaded {n} {"
+    assert L.detail_text(t, "<b>") == "&lt;b&gt;"
+
+
+def test_webhook_config_tells_the_integration_its_app(monkeypatch, tmp_path):
+    monkeypatch.setattr(L, "WEBHOOK_CONFIG", tmp_path / "hook.json")
+    monkeypatch.setattr(L.socket, "gethostname", lambda: "abcd1234-garmin-mcp")
+    remote = L.RemoteAccess(L.Services())
+    remote.webhook_id = "garmin_mcp_x"
+    remote._write_config()
+    data = json.loads((tmp_path / "hook.json").read_text())
+    assert data["app_slug"] == "abcd1234_garmin_mcp"
+    assert stat.S_IMODE(os.stat(tmp_path / "hook.json").st_mode) == 0o600
+
+
+def test_page_is_only_for_home_assistant(monkeypatch):
+    """The MCP server shares the container (127.0.0.1): it may see the health
+    check, but never the page with the CSRF token and the connector URL."""
+    from starlette.testclient import TestClient
+
+    monkeypatch.setattr(L, "ALLOW_ANY_UI_CLIENT", False)
+
+    class FakeServices:
+        active_tools = set()
+        options = {}
+
+        def mcp_state(self):
+            return "stopped"
+
+    monkeypatch.setattr(L, "SERVICES", FakeServices(), raising=False)
+    for ip, page, status_json in (("127.0.0.1", 403, 200), ("172.30.32.2", None, 200), ("8.8.8.8", 403, 403)):
+        with TestClient(L.app, client=(ip, 50000)) as client:
+            assert client.get("/status.json").status_code == status_json, ip
+            if page:
+                assert client.get("/").status_code == page, ip
+                assert client.post("/restart-ha").status_code == page, ip
+                assert client.post("/tools").status_code == page, ip

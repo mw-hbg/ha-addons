@@ -6,7 +6,9 @@ image="$1"
 data=$(mktemp -d)
 echo '{"log_level": "info"}' > "$data/options.json"
 
-docker run -d --name app-smoke -v "$data:/data" "$image" >/dev/null
+# ALLOW_ANY_UI_CLIENT: the page normally only answers Home Assistant's ingress
+# proxy; here the checks run inside the container (127.0.0.1).
+docker run -d --name app-smoke -e ALLOW_ANY_UI_CLIENT=1 -v "$data:/data" "$image" >/dev/null
 trap 'docker logs app-smoke || true; docker rm -f app-smoke >/dev/null 2>&1 || true' EXIT
 
 check() {
@@ -65,6 +67,32 @@ if docker logs app-smoke 2>&1 | grep -q "$secret"; then
   echo "secret path found in log" >&2
   exit 1
 fi
+
+echo "3b. MCP server user cannot touch secrets or the app"
+docker exec app-smoke python3 -c "
+import sys; sys.path.insert(0, '/app')
+import launcher as L
+ident = L.mcp_identity()
+assert ident and ident[0] != 0, 'unprivileged user missing'
+L.prepare_mcp_dirs(ident)
+"
+docker exec -u garmin app-smoke python3 -c "
+import os
+open('/data/downloads/ok.txt', 'w').write('x'); os.remove('/data/downloads/ok.txt')
+open('/data/garmin_tokens/ok.txt', 'w').write('x'); os.remove('/data/garmin_tokens/ok.txt')
+for path in ('/data/secret_path', '/app/launcher.py', '/data/new_file', '/etc/passwd'):
+    try:
+        open(path, 'a').close()
+    except PermissionError:
+        continue
+    raise SystemExit(f'garmin user could write {path}')
+try:
+    open('/data/secret_path').read()
+    raise SystemExit('garmin user could read the secret path')
+except PermissionError:
+    pass
+import garmin_mcp  # the server itself still loads
+"
 
 echo "4. Health check passes"
 for _ in $(seq 1 30); do

@@ -137,7 +137,9 @@ Die **Connector-URL** von der App-Seite kopieren. Sie sieht so aus:
   gar nicht an.
 * **Die KI kommt nicht an deine Dateien:** Datei-Tools (Strecke hochladen, Aktivität
   herunterladen) arbeiten nur im eigenen Download-Ordner der App. Der MCP-Server bekommt
-  keinen Zugang zu Home Assistant.
+  keinen Zugang zu Home Assistant und läuft als eingeschränkter Benutzer: Schreiben darf
+  er nur seine Garmin-Tokens und Downloads – nicht den Home-Assistant-Konfigurationsordner,
+  nicht die Geheimnisse der App und nicht die App-Seite.
 * **Schreibrechte bewusst wählen** (siehe unten). `read_only` ist am sichersten;
   `create_only` (Standard) löscht oder überschreibt nie etwas.
 * **Zusätzliche Absicherung – IP-Freigabeliste:** Nutzt du nur einen KI-Dienst, kannst du

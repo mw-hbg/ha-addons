@@ -6,6 +6,12 @@
 and generate a new secret URL on the app page (**New URL**), then replace it in your AI app.
 
 Security
+- The internet-facing MCP server now runs as an unprivileged user. Even if the Garmin
+  server had a vulnerability, it could not write to the Home Assistant configuration
+  folder, read the app's secrets or use the app page – only its tokens and downloads
+  are writable for it.
+- The app page only answers Home Assistant (ingress); the container itself only gets the
+  health check.
 - File tools (`upload_course`, `download_course_gpx`, `download_activity_file`,
   `set_fit_download_dir`) can only read and write inside the app's download folder. Before,
   an AI could upload any readable file (e.g. from the Home Assistant config folder) as a

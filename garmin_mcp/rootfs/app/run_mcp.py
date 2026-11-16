@@ -78,11 +78,10 @@ def confine_paths(fn):
     except (TypeError, ValueError):
         return fn
     guarded_params = [p for p in signature.parameters if p in PATH_PARAMETERS]
-    if not guarded_params or not inspect.iscoroutinefunction(fn):
+    if not guarded_params:
         return fn
 
-    @functools.wraps(fn)
-    async def guarded(*args, **kwargs):
+    def blocked(args, kwargs) -> str | None:
         bound = signature.bind_partial(*args, **kwargs)
         for name in guarded_params:
             value = bound.arguments.get(name)
@@ -95,7 +94,20 @@ def confine_paths(fn):
                         )
                     }
                 )
-        return await fn(*args, **kwargs)
+        return None
+
+    if inspect.iscoroutinefunction(fn):
+        @functools.wraps(fn)
+        async def guarded(*args, **kwargs):
+            if (error := blocked(args, kwargs)) is not None:
+                return error
+            return await fn(*args, **kwargs)
+    else:
+        @functools.wraps(fn)
+        def guarded(*args, **kwargs):
+            if (error := blocked(args, kwargs)) is not None:
+                return error
+            return fn(*args, **kwargs)
 
     return guarded
 

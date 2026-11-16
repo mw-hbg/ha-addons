@@ -28,6 +28,10 @@ RUN set -eux; \
     rm -rf /var/lib/apt/lists/* /etc/nginx/sites-enabled /root/.cache /tmp/constraints.txt; \
     python -c "import garmin_mcp, garmin_mcp.tool_annotations, curl_cffi"
 
+# Unprivileged user for the internet-facing MCP server: no login shell and no
+# write access to the Home Assistant configuration folder.
+RUN useradd --system --no-create-home --home-dir /data/mcp_home --shell /usr/sbin/nologin garmin
+
 COPY rootfs/ /
 
 LABEL \
