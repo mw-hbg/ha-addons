@@ -682,6 +682,11 @@ def core_api(method: str, path: str, data: dict | None = None, quiet: bool = Fal
         return None
 
 
+def app_slug() -> str:
+    """Slug of this app as the Supervisor knows it (hostname "abcd1234-garmin-mcp")."""
+    return socket.gethostname().replace("-", "_")
+
+
 def _own_ip() -> str:
     try:
         return socket.gethostbyname(socket.gethostname())
@@ -729,7 +734,9 @@ class RemoteAccess:
 
     def _write_config(self) -> None:
         target = f"http://{_own_ip()}:{PUBLIC_PORT}/{self.services.secret}/mcp"
-        content = json.dumps({"webhook_id": self.webhook_id, "target_url": target})
+        # app_slug lets the integration notice when the app is uninstalled
+        # and remove itself (Home Assistant runs no app code on uninstall).
+        content = json.dumps({"webhook_id": self.webhook_id, "target_url": target, "app_slug": app_slug()})
         try:
             if WEBHOOK_CONFIG.read_text() == content:
                 return
@@ -1154,8 +1161,7 @@ function copyVal(id,btn){navigator.clipboard.writeText(document.getElementById(i
 
 def _config_url() -> str:
     """Link to this app's configuration tab in the Home Assistant UI."""
-    slug = socket.gethostname().replace("-", "_")
-    return f"/config/app/{slug}/config"
+    return f"/config/app/{app_slug()}/config"
 
 
 DOCS_BASE = "https://github.com/mw-hbg/ha-apps/blob/main/garmin_mcp"

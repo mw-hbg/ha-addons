@@ -3,6 +3,8 @@
 import asyncio
 import json
 
+import pytest
+
 from aiohttp import ClientSession, web
 
 import garmin_mcp_webhook as integration
@@ -114,3 +116,75 @@ def test_app_down_gives_502(tmp_path, monkeypatch):
             await runner.cleanup()
 
     asyncio.run(run())
+
+
+# --- removes itself when the app was uninstalled ----------------------------------------
+
+def _cleanup_setup(tmp_path, monkeypatch, installed):
+    from homeassistant.components import hassio, persistent_notification
+
+    from garmin_mcp_webhook import cleanup
+
+    hassio.INSTALLED = installed
+    persistent_notification.CREATED.clear()
+    folder = tmp_path / "custom_components" / "garmin_mcp_webhook"
+    (folder / "translations").mkdir(parents=True)
+    for lang in ("en", "de"):
+        src = integration._MANIFEST.parent / "translations" / f"{lang}.json"
+        (folder / "translations" / f"{lang}.json").write_text(src.read_text())
+    config = tmp_path / ".garmin_mcp_webhook.json"
+    config.write_text("{}")
+    monkeypatch.setattr(cleanup, "_INTEGRATION_DIR", folder)
+    monkeypatch.setattr(cleanup, "CONFIG_FILE", config)
+    hass, entry = HomeAssistant(), ConfigEntry("cleanup")
+    hass.config.language = "de"
+    return cleanup, hass, entry, folder, config, persistent_notification
+
+
+def test_removes_itself_after_the_app_is_gone(tmp_path, monkeypatch):
+    async def run():
+        cleanup, hass, entry, folder, config, notes = _cleanup_setup(tmp_path, monkeypatch, ["core_ssh"])
+        checks = []
+        monkeypatch.setattr(cleanup, "async_track_time_interval", lambda h, action, i: checks.append(action) or (lambda: None))
+        cleanup.async_watch_app(hass, entry, "abcd1234_garmin_mcp")
+        await asyncio.gather(*hass.tasks)
+        # one missing answer is not enough
+        assert folder.exists() and not hass.config_entries.removed
+        await checks[0]()
+        assert hass.config_entries.removed == ["cleanup"]
+        assert not folder.exists() and not config.exists()
+        assert "deinstalliert" in notes.CREATED[0]["message"]
+
+    asyncio.run(run())
+
+
+@pytest.mark.parametrize("installed", [["abcd1234_garmin_mcp"], RuntimeError("supervisor down"), None])
+def test_keeps_itself_while_installed_or_unsure(tmp_path, monkeypatch, installed):
+    async def run():
+        cleanup, hass, entry, folder, config, notes = _cleanup_setup(tmp_path, monkeypatch, installed)
+        checks = []
+        monkeypatch.setattr(cleanup, "async_track_time_interval", lambda h, action, i: checks.append(action) or (lambda: None))
+        cleanup.async_watch_app(hass, entry, "abcd1234_garmin_mcp")
+        await asyncio.gather(*hass.tasks)
+        for _ in range(3):
+            await checks[0]()
+        assert folder.exists() and config.exists() and not hass.config_entries.removed
+
+    asyncio.run(run())
+
+
+def test_no_check_without_app_slug(tmp_path, monkeypatch):
+    cleanup, hass, entry, folder, config, notes = _cleanup_setup(tmp_path, monkeypatch, [])
+    cleanup.async_watch_app(hass, entry, None)
+    assert not hass.tasks and not entry.unloads
+
+
+def test_only_its_own_folder_is_ever_deleted(tmp_path, monkeypatch):
+    from garmin_mcp_webhook import cleanup
+
+    other = tmp_path / "custom_components" / "something_else"
+    other.mkdir(parents=True)
+    monkeypatch.setattr(cleanup, "_INTEGRATION_DIR", other)
+    monkeypatch.setattr(cleanup, "CONFIG_FILE", tmp_path / "x.json")
+    cleanup._delete_files()
+    assert other.exists()

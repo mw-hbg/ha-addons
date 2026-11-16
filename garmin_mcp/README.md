@@ -72,6 +72,8 @@ reads nothing else and logs nothing but errors.
 * Benefit: no extra hostname, tunnel or port forwarding.
 * Cost: one Home Assistant restart after installing (and after updates of the
   helper). The app page and a repair notice tell you when.
+* Clean uninstall: when you uninstall the app, the helper notices within
+  10–20 minutes and removes itself, including its files – no restart needed.
 
 ## Remote access: webhook or direct
 

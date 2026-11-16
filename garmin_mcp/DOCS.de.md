@@ -131,7 +131,9 @@ Die **Connector-URL** von der App-Seite kopieren. Sie sieht so aus:
   (`.garmin_mcp_webhook.json`) in den Konfigurationsordner und nutzt die
   Home-Assistant-API nur, um diese Integration einzurichten, die Neustart-Benachrichtigung
   anzuzeigen und – wenn du den Knopf drückst – Home Assistant neu zu starten. Sonst liest
-  oder ändert sie nichts. Mit `remote_access: direct` fasst sie den Konfigurationsordner
+  oder ändert sie nichts. Die Hilfs-Integration fragt zusätzlich alle 10 Minuten beim
+  Supervisor nach, ob die App noch installiert ist, um sich nach dem Deinstallieren selbst
+  zu entfernen. Mit `remote_access: direct` fasst sie den Konfigurationsordner
   gar nicht an.
 * **Die KI kommt nicht an deine Dateien:** Datei-Tools (Strecke hochladen, Aktivität
   herunterladen) arbeiten nur im eigenen Download-Ordner der App. Der MCP-Server bekommt
@@ -253,14 +255,20 @@ eine vorhandene Aktivität und braucht bei `create_only` deshalb `enable_tools`.
 
 ## Deinstallieren
 
-Tipp: Vor dem Deinstallieren **Fernzugriff** auf `direct` stellen und die App einmal neu
-starten – dann entfernt sie ihre Hilfs-Integration selbst.
+Einfach die App deinstallieren. Home Assistant führt beim Deinstallieren keinen Code der
+App aus, deshalb räumt die Hilfs-Integration selbst auf: Alle 10 Minuten fragt sie den
+Supervisor, ob die App noch installiert ist. Ist sie weg (zwei Prüfungen hintereinander,
+also nach 10–20 Minuten), entfernt sie ihren Eintrag unter *Geräte & Dienste*, löscht
+`custom_components/garmin_mcp_webhook` und `.garmin_mcp_webhook.json` und zeigt eine
+Benachrichtigung. Ein Neustart ist nicht nötig. Ist Home Assistant in dem Moment aus,
+passiert das nach dem nächsten Start.
 
-Sonst bleibt die Hilfs-Integration nach dem Deinstallieren bestehen (sie antwortet dann
-nur noch mit `502`). Von Hand entfernen: *Einstellungen → Geräte & Dienste → Garmin Connect
-MCP (remote access) → Löschen*, dann den Ordner `custom_components/garmin_mcp_webhook` und
-die Datei `.garmin_mcp_webhook.json` aus dem Konfigurationsordner löschen und Home
-Assistant neu starten.
+Solange die App nur gestoppt ist oder der Supervisor nicht antwortet, wird nichts entfernt.
+
+Von Hand entfernen geht auch: *Einstellungen → Geräte & Dienste → Garmin Connect MCP
+(remote access) → Löschen*, dann den Ordner `custom_components/garmin_mcp_webhook` und die
+Datei `.garmin_mcp_webhook.json` aus dem Konfigurationsordner löschen und Home Assistant
+neu starten.
 
 ## Dank und Lizenzen
 

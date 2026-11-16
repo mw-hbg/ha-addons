@@ -1,0 +1,114 @@
+"""Remove this helper integration once its app has been uninstalled.
+
+Home Assistant lets an app run no code when it is uninstalled, so the app
+cannot clean up after itself. Instead the integration checks every few minutes
+whether the app is still installed (asked from the Supervisor). Only when the
+Supervisor answers and the app is missing from the list of installed apps in
+two checks in a row, it
+
+* removes its config entry (the webhook stops existing immediately),
+* deletes its own files (custom_components/garmin_mcp_webhook and
+  .garmin_mcp_webhook.json),
+* shows a notification that nothing else needs to be done.
+
+If the Supervisor cannot be asked (not a Supervisor installation, an error, an
+older app version that does not tell its slug), nothing is removed.
+"""
+
+from __future__ import annotations
+
+import json
+import logging
+import shutil
+from datetime import timedelta
+from pathlib import Path
+
+from homeassistant.config_entries import ConfigEntry
+from homeassistant.core import HomeAssistant
+from homeassistant.helpers import issue_registry as ir
+from homeassistant.helpers.event import async_track_time_interval
+
+from .const import CONFIG_FILE, DOMAIN
+
+_LOGGER = logging.getLogger(__name__)
+
+CHECK_INTERVAL = timedelta(minutes=10)
+CONFIRMATIONS = 2
+_INTEGRATION_DIR = Path(__file__).resolve().parent
+_RESTART_ISSUE = "restart_required"
+
+
+async def async_installed_apps(hass: HomeAssistant) -> set[str] | None:
+    """Slugs of all installed apps, or None if the Supervisor cannot be asked."""
+    try:
+        from homeassistant.components.hassio import get_supervisor_client
+        from homeassistant.helpers.hassio import is_hassio
+    except ImportError:
+        return None
+    try:
+        if not is_hassio(hass):
+            return None
+        client = get_supervisor_client(hass)
+        # Home Assistant's Supervisor client still uses the old technical name here.
+        apps_client = getattr(client, "apps", None) or client.addons
+        apps = await apps_client.list()
+    except Exception as err:  # noqa: BLE001 - never remove anything on errors
+        _LOGGER.debug("Could not ask the Supervisor for installed apps: %s", err)
+        return None
+    return {str(getattr(app, "slug", "")) for app in apps}
+
+
+def _removal_text(language: str | None) -> tuple[str, str]:
+    """Notification text in the Home Assistant language (English fallback)."""
+    texts = {}
+    for code in ("en", (language or "en").split("-")[0].lower()):
+        try:
+            data = json.loads((_INTEGRATION_DIR / "translations" / f"{code}.json").read_text(encoding="utf-8"))
+            texts.update(data.get("removal", {}))
+        except (OSError, ValueError):
+            pass
+    return (
+        texts.get("title", "Garmin Connect MCP"),
+        texts.get("message", "The Garmin Connect MCP app was uninstalled. Its helper integration removed itself."),
+    )
+
+
+def _delete_files() -> None:
+    # Safety net: only ever delete our own folder inside custom_components.
+    if _INTEGRATION_DIR.name == DOMAIN and _INTEGRATION_DIR.parent.name == "custom_components":
+        shutil.rmtree(_INTEGRATION_DIR, ignore_errors=True)
+    try:
+        CONFIG_FILE.unlink()
+    except FileNotFoundError:
+        pass
+
+
+async def async_remove_everything(hass: HomeAssistant, entry: ConfigEntry) -> None:
+    from homeassistant.components import persistent_notification
+
+    title, message = await hass.async_add_executor_job(_removal_text, hass.config.language)
+    _LOGGER.warning("The Garmin Connect MCP app is no longer installed – removing its helper integration")
+    ir.async_delete_issue(hass, DOMAIN, _RESTART_ISSUE)
+    await hass.config_entries.async_remove(entry.entry_id)
+    await hass.async_add_executor_job(_delete_files)
+    persistent_notification.async_create(hass, message, title=title, notification_id=f"{DOMAIN}_removed")
+
+
+def async_watch_app(hass: HomeAssistant, entry: ConfigEntry, app_slug: str | None) -> None:
+    """Start the periodic check (does nothing if the app did not tell its slug)."""
+    if not app_slug:
+        return
+    missing = 0
+
+    async def _check(_now=None) -> None:
+        nonlocal missing
+        installed = await async_installed_apps(hass)
+        if installed is None or app_slug in installed:
+            missing = 0
+            return
+        missing += 1
+        if missing >= CONFIRMATIONS:
+            await async_remove_everything(hass, entry)
+
+    entry.async_on_unload(async_track_time_interval(hass, _check, CHECK_INTERVAL))
+    hass.async_create_task(_check())

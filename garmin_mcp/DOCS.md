@@ -134,7 +134,9 @@ Copy the **Connector URL** from the app page. It looks like
   (`.garmin_mcp_webhook.json`) into the configuration folder, and uses the
   Home Assistant API only to set up that integration, to show the restart
   notification and – when you click the button – to restart Home Assistant. It
-  does not read or change anything else. With `remote_access: direct` it does
+  does not read or change anything else. The helper integration additionally asks the
+  Supervisor every 10 minutes whether the app is still installed, to remove itself after
+  an uninstall. With `remote_access: direct` it does
   not touch the configuration folder at all.
 * **The AI cannot reach your files:** file tools (upload a course, download an
   activity) only work inside the app's own download folder. The MCP server gets no
@@ -254,14 +256,20 @@ changes an existing activity and therefore needs `enable_tools` with `create_onl
 
 ## Uninstalling
 
-Tip: set **Remote access** to `direct` and restart the app once before
-uninstalling – it then removes its helper integration by itself.
+Just uninstall the app. Home Assistant runs no code of an app when it is uninstalled,
+so the helper integration cleans up after itself: every 10 minutes it asks the
+Supervisor whether the app is still installed. Once the app is gone (two checks in a
+row, so after 10–20 minutes), it removes its entry under *Devices & services*, deletes
+`custom_components/garmin_mcp_webhook` and `.garmin_mcp_webhook.json` and shows a
+notification. No restart is needed. If Home Assistant is off at the time, this happens
+after the next start.
 
-Otherwise uninstalling the app leaves the helper integration in place (it
-then just answers `502`). To remove it by hand: *Settings → Devices & services →
-Garmin Connect MCP (remote access) → Delete*, then delete the folder
-`custom_components/garmin_mcp_webhook` and the file `.garmin_mcp_webhook.json`
-from your configuration folder and restart Home Assistant.
+Nothing is removed while the app is only stopped, or if the Supervisor cannot be asked.
+
+To remove the integration by hand instead: *Settings → Devices & services → Garmin
+Connect MCP (remote access) → Delete*, then delete the folder
+`custom_components/garmin_mcp_webhook` and the file `.garmin_mcp_webhook.json` from your
+configuration folder and restart Home Assistant.
 
 ## Credits and licenses
 

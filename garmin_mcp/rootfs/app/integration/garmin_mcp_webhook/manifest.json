@@ -3,10 +3,16 @@
   "name": "Garmin Connect MCP (remote access)",
   "codeowners": [],
   "config_flow": true,
-  "dependencies": ["webhook", "repairs"],
+  "dependencies": [
+    "webhook",
+    "repairs"
+  ],
   "documentation": "https://github.com/mw-hbg/ha-apps",
   "integration_type": "service",
   "iot_class": "local_push",
   "single_config_entry": true,
-  "version": "0.2.2"
+  "version": "0.2.2",
+  "after_dependencies": [
+    "hassio"
+  ]
 }

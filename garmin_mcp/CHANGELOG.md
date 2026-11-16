@@ -35,6 +35,12 @@ Configuration
 - Area `workouts` now includes `push_workout_to_device` and `reschedule_workout` (still subject
   to `write_access`) – before, workouts could not be sent to the watch without `enable_tools`.
 
+Uninstalling
+- Uninstalling the app now also removes its helper integration: the integration checks
+  every 10 minutes whether the app is still installed and, once it is gone, removes its
+  entry and files and shows a notification (no restart needed). Nothing is removed while
+  the app is only stopped.
+
 Languages
 - Everything is available in English and German: app page, configuration, notifications,
   repair notice and documentation (`DOCS.de.md`). The page follows the browser language

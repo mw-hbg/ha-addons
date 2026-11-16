@@ -17,5 +17,9 @@
         }
       }
     }
+  },
+  "removal": {
+    "title": "Garmin Connect MCP removed",
+    "message": "The Garmin Connect MCP app was uninstalled, so its helper integration for remote access removed itself (including its files). Nothing else to do – a restart is not needed."
   }
 }

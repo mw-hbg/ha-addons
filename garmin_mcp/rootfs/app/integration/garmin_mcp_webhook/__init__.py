@@ -32,6 +32,7 @@ from homeassistant.exceptions import ConfigEntryNotReady
 from homeassistant.helpers import issue_registry as ir
 from homeassistant.helpers.event import async_track_time_interval
 
+from .cleanup import async_watch_app
 from .const import CONFIG_FILE, DOMAIN
 
 _LOGGER = logging.getLogger(__name__)
@@ -125,6 +126,8 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     entry.async_on_unload(
         async_track_time_interval(hass, _check_update, timedelta(minutes=1))
     )
+    # Remove ourselves once the app has been uninstalled (see cleanup.py).
+    async_watch_app(hass, entry, config.get("app_slug"))
 
     _LOGGER.info("Garmin Connect MCP remote access enabled")
     return True

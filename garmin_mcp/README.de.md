@@ -81,6 +81,8 @@ speichert nichts, liest sonst nichts und protokolliert nur Fehler.
 * Preis: ein Neustart von Home Assistant nach der Installation (und nach
   Updates der Hilfs-Integration). App-Seite und Reparatur-Hinweis sagen dir,
   wann.
+* Sauber deinstallieren: Deinstallierst du die App, merkt die Hilfs-Integration das
+  innerhalb von 10–20 Minuten und entfernt sich samt Dateien selbst – ohne Neustart.
 
 ## Fernzugriff: webhook oder direct
 

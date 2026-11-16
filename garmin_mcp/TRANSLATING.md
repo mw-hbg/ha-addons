@@ -11,7 +11,7 @@ below with it.
 |---|---|---|---|
 | 1 | `rootfs/app/i18n/xx.json` | App page, notifications, tool categories and tool descriptions | Copy `en.json`, translate the values, keep the keys and placeholders like `{n}` unchanged. Set `"language"` to the name of the language in that language (e.g. `"Français"`). |
 | 2 | `translations/xx.yaml` | *Configuration* and *Network* sections of the app in Home Assistant | Copy `translations/en.yaml`, translate `name` and `description`. |
-| 3 | `rootfs/app/integration/garmin_mcp_webhook/translations/xx.json` | Repair notice “restart required” of the helper integration | Copy `en.json` next to it and translate it. Also raise `version` in `manifest.json` of the integration, so the app installs the new texts (Home Assistant then asks for one restart). |
+| 3 | `rootfs/app/integration/garmin_mcp_webhook/translations/xx.json` | Repair notice “restart required” and the notification after uninstalling (helper integration) | Copy `en.json` next to it and translate it. Also raise `version` in `manifest.json` of the integration, so the app installs the new texts (Home Assistant then asks for one restart). |
 | 4 | `DOCS.xx.md` *(optional)* | Documentation linked from the app page | Copy `DOCS.md`, translate it and keep the lines `<!-- tools:start -->` / `<!-- tools:end -->`. Set `"docs_file": "DOCS.xx.md"` in `i18n/xx.json`. Without it the English documentation is linked. |
 | 5 | `README.xx.md` *(optional)* | GitHub | Copy `README.md` and add a link to it at the top of the other READMEs. |
 
