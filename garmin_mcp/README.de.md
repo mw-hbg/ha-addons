@@ -33,7 +33,7 @@ von Garmin zu deinem KI-Assistenten.
 ## Installation
 
 1. *Einstellungen → Add-ons → Add-on-Store → ⋮ → Repositories*, dort
-   `https://github.com/mw-hbg/ha-garmin-mcp` eintragen.
+   `https://github.com/mw-hbg/ha-addons` eintragen.
 2. **Garmin Connect MCP** installieren und starten.
 3. In der Seitenleiste **Garmin MCP** öffnen und bei Garmin Connect anmelden.
 4. Home Assistant einmal neu starten, wenn die Add-on-Seite darum bittet.
@@ -43,11 +43,11 @@ Voraussetzung: Home Assistant ist bereits von außen per HTTPS erreichbar
 (Nabu Casa, Cloudflare-Tunnel, Reverse Proxy …). Einen zusätzlichen Hostnamen
 oder Tunnel braucht es nicht.
 
-Ausführliche Anleitung (Englisch): [garmin_mcp/DOCS.md](garmin_mcp/DOCS.md),
+Ausführliche Anleitung (Englisch): [DOCS.md](DOCS.md),
 auch im Tab *Dokumentation* des Add-ons.
 
 ## Lizenz
 
-MIT-Lizenz, siehe [LICENSE](LICENSE). Das Add-on wird kostenlos und ohne
+MIT-Lizenz, siehe [LICENSE](../LICENSE). Das Add-on wird kostenlos und ohne
 Gewähr bereitgestellt. Lizenzen der enthaltenen Software:
-[THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).
+[THIRD_PARTY_NOTICES.md](../THIRD_PARTY_NOTICES.md).
