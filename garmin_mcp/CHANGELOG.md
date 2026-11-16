@@ -7,6 +7,8 @@
   never while you are typing.
 - Fixed: after the helper integration was updated, the app page now asks for the Home
   Assistant restart right away.
+- Docs: the first restart after installing is announced only on the app page, not as a
+  Home Assistant notification.
 
 ---
 
@@ -15,6 +17,8 @@
   sich der Status wirklich ändert, und nie, während du etwas eintippst.
 - Behoben: Nach einem Update der Hilfs-Integration fordert die App-Seite den Neustart von
   Home Assistant jetzt sofort an.
+- Anleitung: Den ersten Neustart nach der Installation kündigt nur die App-Seite an, nicht
+  Home Assistant per Benachrichtigung.
 
 ## 0.4.0
 

@@ -71,7 +71,9 @@ ist das meist bereits der Fall. Ohne Zustimmung schlägt das Schreiben mit HTTP 
 
 Beim ersten Start kopiert die App ihre Hilfs-Integration in Home Assistant. Die App-Seite
 zeigt dann **„Home Assistant muss einmal neu gestartet werden“**: neu starten über
-*Einstellungen → System → Neu starten*. Nach dem Neustart richtet Home Assistant die
+*Einstellungen → System → Neu starten*. Home Assistant selbst zeigt für diesen ersten
+Neustart **keine Benachrichtigung** – die App hat keinen Zugriff auf die API, und die
+Hilfs-Integration läuft erst nach dem Neustart. Nach dem Neustart richtet Home Assistant die
 Integration selbst ein (die App meldet ihre Einstellungen über die offizielle
 App-Erkennung von Home Assistant), und der Status steht auf **Aktiv** – sonst ist nichts
 einzurichten. Bringt ein späteres App-Update eine neue Version der Hilfs-Integration mit,

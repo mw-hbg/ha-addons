@@ -26,7 +26,9 @@ without any third-party service in between.
   Home Assistant (Nabu Casa, Cloudflare Tunnel, reverse proxy …) via a webhook.
 * **Connection test** with one click – server, Garmin login and connector URL
   from the internet.
-* **Repair notices** in Home Assistant when a restart is needed or the Garmin login expired.
+* **Repair notices** in Home Assistant when the Garmin login expired or an update of the
+  helper integration needs a restart (the very first restart after installing is only
+  shown on the app page).
 * **No access to the Home Assistant API**, and the MCP server is locked into its own
   folders (unprivileged user + Linux Landlock) – nothing in Home Assistant can be changed
   from outside through this app.
@@ -42,9 +44,17 @@ without any third-party service in between.
 1. *Settings → Apps → Install app → ⋮ → Repositories*, add
    `https://github.com/mw-hbg/ha-apps`.
 2. Install **Garmin Connect MCP** and start it.
-3. Open **Garmin MCP** in the sidebar, log in to Garmin Connect.
-4. Restart Home Assistant once when the app page asks for it.
-5. Add the connector URL shown on the app page to your AI assistant.
+3. **Restart Home Assistant once** (*Settings → System → Restart*). There is **no
+   notification** for this first restart – only the app page shows the hint. The app
+   has no access to the Home Assistant API, and its helper integration only runs after
+   this restart. Later updates of the helper integration show a repair notice.
+4. Open **Garmin MCP** in the sidebar and log in to Garmin Connect. *Remote access*
+   should show **Active** about a minute after the restart.
+5. Click **Test connection**, then add the connector URL shown on the app page to your
+   AI assistant.
+
+Requirement: Home Assistant is already reachable from the internet over HTTPS (Nabu
+Casa, Cloudflare Tunnel, reverse proxy …). No extra hostname or tunnel is needed.
 
 Good to know:
 

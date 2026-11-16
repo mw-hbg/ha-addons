@@ -30,8 +30,9 @@ von Garmin zu deinem KI-Assistenten.
 * **Kein Zugriff auf die Home-Assistant-API**, und der MCP-Server ist in seine eigenen
   Ordner eingesperrt (eingeschränkter Benutzer + Linux-Landlock) – über diese App lässt sich
   von außen nichts in Home Assistant ändern.
-* **Reparatur-Hinweise**, wenn ein Neustart nötig ist oder die Garmin-Anmeldung
-  abgelaufen ist.
+* **Reparatur-Hinweise**, wenn die Garmin-Anmeldung abgelaufen ist oder ein Update der
+  Hilfs-Integration einen Neustart braucht (den allerersten Neustart nach der
+  Installation zeigt nur die App-Seite an).
 * **Geschützter Endpunkt:** nur über eine lange, zufällige geheime URL
   erreichbar, die du per Klick neu erzeugen kannst.
 * **Deutsch und Englisch** – App-Seite, Konfiguration, Benachrichtigungen und Anleitung;
@@ -44,9 +45,15 @@ von Garmin zu deinem KI-Assistenten.
 1. *Einstellungen → Apps → App installieren → ⋮ → Repositories*, dort
    `https://github.com/mw-hbg/ha-apps` eintragen.
 2. **Garmin Connect MCP** installieren und starten.
-3. In der Seitenleiste **Garmin MCP** öffnen und bei Garmin Connect anmelden.
-4. Home Assistant einmal neu starten, wenn die App-Seite darum bittet.
-5. Die auf der App-Seite angezeigte Connector-URL in deinem KI-Assistenten eintragen.
+3. **Home Assistant einmal neu starten** (*Einstellungen → System → Neu starten*). Für
+   diesen ersten Neustart kommt **keine Benachrichtigung** – nur die App-Seite weist
+   darauf hin. Die App hat keinen Zugriff auf die Home-Assistant-API, und ihre
+   Hilfs-Integration läuft erst nach diesem Neustart. Spätere Updates der
+   Hilfs-Integration melden sich als Reparatur-Hinweis.
+4. In der Seitenleiste **Garmin MCP** öffnen und bei Garmin Connect anmelden. Etwa eine
+   Minute nach dem Neustart sollte bei *Fernzugriff* **Aktiv** stehen.
+5. **Verbindung testen** drücken, dann die auf der App-Seite angezeigte Connector-URL in
+   deinem KI-Assistenten eintragen.
 
 Voraussetzung: Home Assistant ist bereits von außen per HTTPS erreichbar
 (Nabu Casa, Cloudflare-Tunnel, Reverse Proxy …). Einen zusätzlichen Hostnamen

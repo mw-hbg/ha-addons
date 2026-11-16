@@ -73,7 +73,9 @@ usually already the case. Without it, writing fails with HTTP 412.
 
 On first start the app copies its helper integration into Home Assistant. The app page
 then shows **“Home Assistant must be restarted once”**: restart via *Settings →
-System → Restart*. After the restart Home Assistant sets the integration up by itself
+System → Restart*. Home Assistant itself shows **no notification** for this first
+restart – the app has no access to its API, and the helper integration only runs after
+the restart. After the restart Home Assistant sets the integration up by itself
 (the app announces its settings through Home Assistant's official app discovery) and
 the status changes to **Active** – nothing else to set up. When a later app update
 brings a new version of the helper integration, Home Assistant shows a **repair
