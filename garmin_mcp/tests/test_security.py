@@ -310,3 +310,21 @@ def test_landlock_limits_the_mcp_server_to_its_folders(tmp_path):
         pytest.skip("Landlock not available on this machine")
     assert result.returncode == 0, result.stderr + result.stdout
     assert (allowed / "ok").read_text() == "ok"
+
+
+def test_apparmor_profile_limits_the_home_assistant_folder():
+    """The whole app may only touch its own helper integration in the HA folder."""
+    profile = (Path(L.__file__).resolve().parents[2] / "apparmor.txt").read_text()
+    assert re.search(r"^profile \S+ flags=\(attach_disconnected,mediate_deleted\) \{", profile, re.M)
+    rules = [line.strip().rstrip(",") for line in profile.splitlines() if line.strip().startswith("/homeassistant")]
+    assert sorted(rules) == sorted([
+        "/homeassistant/ r",
+        "/homeassistant/custom_components/ rw",
+        "/homeassistant/custom_components/garmin_mcp_webhook/ rw",
+        "/homeassistant/custom_components/garmin_mcp_webhook/** rwl",
+        "/homeassistant/.garmin_mcp_webhook.json w",
+    ])
+    executables = re.findall(r"^\s*(\S+) [a-z]*x[a-z]*,", profile, re.M)
+    assert sorted(executables) == ["/usr/local/bin/python3*", "/usr/sbin/nginx"]
+    for capability in ("sys_admin", "net_admin", "sys_module", "sys_ptrace", "net_raw"):
+        assert f"capability {capability}" not in profile

@@ -435,7 +435,7 @@ NGINX_TEMPLATE = """
 worker_processes 1;
 pid /tmp/garmin-mcp-nginx.pid;
 # Only critical errors: nginx error lines contain the request path, i.e. the secret.
-error_log /dev/stderr crit;
+error_log stderr crit;
 events {{ worker_connections 256; }}
 http {{
     access_log off;            # the secret path must never end up in a log

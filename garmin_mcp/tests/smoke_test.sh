@@ -12,7 +12,23 @@ echo '{"log_level": "info"}' > "$data/options.json"
 ha=$(mktemp -d)
 echo "api_password: top-secret" > "$ha/secrets.yaml"
 chmod 755 "$ha"; chmod 644 "$ha/secrets.yaml"
-docker run -d --name app-smoke -e ALLOW_ANY_UI_CLIENT=1 -v "$data:/data" -v "$ha:/homeassistant" "$image" >/dev/null
+echo "homeassistant: {}" > "$ha/configuration.yaml"; chmod 644 "$ha/configuration.yaml"
+
+# AppArmor: run the container with the app's own profile, like Home Assistant
+# does. Required on CI (the GitHub runners have AppArmor), optional elsewhere.
+here="$(cd "$(dirname "$0")/.." && pwd)"
+security=()
+if [ -d /sys/kernel/security/apparmor ] && command -v apparmor_parser >/dev/null; then
+  sudo apparmor_parser -r -W "$here/apparmor.txt"
+  security=(--security-opt apparmor=garmin_mcp)
+  apparmor=1
+elif [ -n "${CI:-}" ]; then
+  echo "AppArmor is not available on this CI runner" >&2; exit 1
+else
+  echo "(AppArmor not available here – testing without the profile)"
+  apparmor=0
+fi
+docker run -d --name app-smoke "${security[@]}" -e ALLOW_ANY_UI_CLIENT=1 -v "$data:/data" -v "$ha:/homeassistant" "$image" >/dev/null
 trap 'docker logs app-smoke || true; docker rm -f app-smoke >/dev/null 2>&1 || true' EXIT
 
 check() {
@@ -66,7 +82,7 @@ assert code(f'http://127.0.0.1:8100/{secret}/mcp', 'POST') == 503
 "
 
 echo "3. Secret path is never written to the log"
-secret=$(docker exec app-smoke cat /data/secret_path)
+secret=$(docker exec app-smoke python3 -c "print(open('/data/secret_path').read().strip())")
 if docker logs app-smoke 2>&1 | grep -q "$secret"; then
   echo "secret path found in log" >&2
   exit 1
@@ -133,6 +149,42 @@ except Exception as exc:
         raise
     print('   (network check skipped:', type(exc).__name__, ')')
 "
+
+if [ "$apparmor" = 1 ]; then
+echo "3d. AppArmor: even root in the container only reaches the helper integration"
+docker exec app-smoke python3 -c "
+import os, time
+assert 'garmin_mcp' in open('/proc/1/attr/current').read(), 'not confined by the profile'
+for _ in range(30):  # the app copies the helper integration after its start
+    if os.path.exists('/homeassistant/custom_components/garmin_mcp_webhook/manifest.json'):
+        break
+    time.sleep(1)
+else:
+    raise SystemExit('helper integration was not installed')
+for action, path in (('r', '/homeassistant/secrets.yaml'), ('a', '/homeassistant/configuration.yaml'),
+                     ('w', '/homeassistant/new_file.yaml'), ('w', '/homeassistant/www/x')):
+    try:
+        open(path, action).close()
+    except (PermissionError, FileNotFoundError) as exc:
+        if isinstance(exc, FileNotFoundError) and action == 'w' and 'www' in path:
+            continue  # folder does not exist – would need mkdir, which is blocked too
+        continue
+    raise SystemExit(f'root could {action} {path} despite AppArmor')
+try:
+    os.mkdir('/homeassistant/www')
+    raise SystemExit('root could create folders in the Home Assistant folder')
+except PermissionError:
+    pass
+import subprocess
+try:
+    subprocess.run(['/bin/sh', '-c', 'true'], check=True)
+    raise SystemExit('a shell could be started despite AppArmor')
+except PermissionError:
+    pass
+"
+test -f "$ha/custom_components/garmin_mcp_webhook/manifest.json"
+grep -q "top-secret" "$ha/secrets.yaml"
+fi
 
 echo "4. Health check passes"
 for _ in $(seq 1 30); do

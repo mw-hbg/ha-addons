@@ -1,5 +1,20 @@
 # Changelog
 
+## Unreleased
+
+- Security: the app now has its own AppArmor profile (security rating 8 of 8 in Home
+  Assistant). The kernel limits every process of the app – including its internal part –
+  to what it needs: in the Home Assistant configuration folder only its helper
+  integration, no other programs than Python and nginx, no system changes.
+
+---
+
+- Sicherheit: Die App hat jetzt ein eigenes AppArmor-Profil (Sicherheitsbewertung 8 von 8
+  in Home Assistant). Der Kernel beschränkt jeden Prozess der App – auch ihren internen
+  Teil – auf das Nötige: im Home-Assistant-Konfigurationsordner nur ihre
+  Hilfs-Integration, keine anderen Programme als Python und nginx, keine Änderungen am
+  System.
+
 ## 0.4.2
 
 - The repository is now ready for more apps: tests, image builds and releases work for
