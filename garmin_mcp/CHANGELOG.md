@@ -10,6 +10,9 @@
   blocked its requests as a script. The test now identifies itself properly. If Cloudflare
   (or another proxy) still blocks it, this is shown as a note with a hint instead of an
   error – the AI app is usually not affected.
+- Development: the Raspberry Pi image (aarch64) is now built natively on GitHub's arm64
+  runners instead of being emulated – releases take about 2 instead of 6 minutes, and the
+  image test now also runs for the Raspberry Pi image.
 
 ---
 
@@ -22,6 +25,9 @@
   seine Anfragen als Skript blockiert hat. Der Test meldet sich jetzt mit einem richtigen
   Namen. Blockiert Cloudflare (oder ein anderer Proxy) trotzdem, erscheint das als Hinweis
   mit Lösungsvorschlag statt als Fehler – die KI-App ist davon meist nicht betroffen.
+- Entwicklung: Das Raspberry-Pi-Image (aarch64) wird jetzt direkt auf den ARM-Rechnern von
+  GitHub gebaut statt nachgeahmt – ein Release dauert etwa 2 statt 6 Minuten, und der
+  Image-Test läuft jetzt auch für das Raspberry-Pi-Image.
 
 ## 0.4.2
 

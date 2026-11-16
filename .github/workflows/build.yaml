@@ -7,7 +7,7 @@ name: Test
 # Per app, if present:
 #   <app>/tests/setup.sh       installs what the unit tests need
 #   <app>/tests/               unit tests (pytest; smoke_test.sh is not one)
-#   <app>/tests/smoke_test.sh  runs against the built amd64 image
+#   <app>/tests/smoke_test.sh  runs against every natively built image
 on:
   pull_request:
   push:
@@ -75,7 +75,8 @@ jobs:
 
   build:
     needs: [apps, lint, unit-tests]
-    runs-on: ubuntu-latest
+    # amd64 on x64, aarch64 on GitHub's arm64 runners – no emulation
+    runs-on: ${{ matrix.runner }}
     strategy:
       fail-fast: false
       matrix:
@@ -83,6 +84,7 @@ jobs:
     steps:
       - uses: actions/checkout@v7
       - uses: docker/setup-qemu-action@v4
+        if: ${{ !matrix.native }}
       - uses: docker/setup-buildx-action@v4
       - name: Build ${{ matrix.app }} (${{ matrix.arch }})
         uses: docker/build-push-action@v7
@@ -90,7 +92,7 @@ jobs:
           context: ./${{ matrix.app }}
           platforms: ${{ matrix.platform }}
           push: false
-          load: ${{ matrix.arch == 'amd64' }}
+          load: ${{ matrix.native }}
           tags: ${{ matrix.app }}-test:${{ matrix.arch }}
           build-args: |
             BUILD_VERSION=test
@@ -98,5 +100,5 @@ jobs:
           cache-from: type=gha,scope=${{ matrix.app }}-${{ matrix.arch }}
           cache-to: type=gha,mode=max,scope=${{ matrix.app }}-${{ matrix.arch }}
       - name: Smoke test the image
-        if: matrix.arch == 'amd64' && hashFiles(format('{0}/tests/smoke_test.sh', matrix.app)) != ''
-        run: bash "${{ matrix.app }}/tests/smoke_test.sh" "${{ matrix.app }}-test:amd64"
+        if: matrix.native && hashFiles(format('{0}/tests/smoke_test.sh', matrix.app)) != ''
+        run: bash "${{ matrix.app }}/tests/smoke_test.sh" "${{ matrix.app }}-test:${{ matrix.arch }}"

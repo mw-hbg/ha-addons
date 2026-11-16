@@ -26,6 +26,15 @@ PLATFORMS = {
     "armhf": "linux/arm/v6",
     "i386": "linux/386",
 }
+# Where each architecture is built. amd64 and aarch64 run natively on GitHub's
+# free x64 and arm64 runners (public repositories); others are emulated (QEMU).
+RUNNERS = {
+    "amd64": ("ubuntu-latest", False),
+    "aarch64": ("ubuntu-24.04-arm", False),
+    "armv7": ("ubuntu-24.04-arm", True),
+    "armhf": ("ubuntu-24.04-arm", True),
+    "i386": ("ubuntu-latest", True),
+}
 
 
 def apps() -> list[str]:
@@ -46,7 +55,17 @@ def info(app: str) -> dict:
         "version": str(cfg["version"]),
         "image": image,
         "archs": archs,
-        "builds": [{"app": app, "arch": a, "platform": PLATFORMS[a]} for a in archs],
+        "builds": [
+            {
+                "app": app,
+                "arch": a,
+                "platform": PLATFORMS[a],
+                "runner": RUNNERS[a][0],
+                # native = no emulation; only native builds can run the smoke test
+                "native": not RUNNERS[a][1],
+            }
+            for a in archs
+        ],
     }
 
 
