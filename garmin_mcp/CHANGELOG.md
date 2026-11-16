@@ -1,5 +1,10 @@
 # Changelog
 
+## Unreleased
+
+- The add-on page refreshes itself every few seconds while the server is starting, so the
+  status switches to "Ready" without reloading by hand.
+
 ## 0.2.1
 
 - Fix: remote access failed to start ("Unexpected method: DELETE"); Home Assistant webhooks

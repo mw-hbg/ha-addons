@@ -1017,7 +1017,12 @@ async def index(request: Request) -> Response:
         f'<!doctype html><html lang="{_lang(request)}"><head><meta charset="utf-8">'
         f'<meta name="viewport" content="width=device-width,initial-scale=1">'
         f"<title>{t['title']}</title><style>{CSS}</style></head>"
-        f"<body><main>{body}</main><script>{JS}</script></body></html>"
+        f"<body><main>{body}</main><script>{JS}</script>"
+        # While the server or remote access is still starting, reload the page
+        # every few seconds so the status updates without user action.
+        + ("<script>setTimeout(()=>location.reload(),5000)</script>"
+           if (state == "pending" or REMOTE.state == "setting_up") and not PENDING_MFA else "")
+        + "</body></html>"
     )
     return HTMLResponse(page, headers={"Cache-Control": "no-store", "X-Frame-Options": "SAMEORIGIN"})
 
