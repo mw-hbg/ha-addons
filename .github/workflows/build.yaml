@@ -54,10 +54,6 @@ jobs:
           else
             echo "push=false" >> "$GITHUB_OUTPUT"
           fi
-          if grep -q "OWNER" garmin_mcp/config.yaml; then
-            echo "::error::Replace the OWNER placeholder in garmin_mcp/config.yaml with your GitHub user name"
-            exit 1
-          fi
 
       - name: Check release tag matches config.yaml version
         if: github.event_name == 'release'

@@ -33,7 +33,7 @@ LABEL \
     io.hass.type="addon" \
     io.hass.version="${BUILD_VERSION}" \
     io.hass.arch="${BUILD_ARCH}" \
-    org.opencontainers.image.source="https://github.com/OWNER/ha-garmin-mcp" \
+    org.opencontainers.image.source="https://github.com/mw-hbg/ha-garmin-mcp" \
     org.opencontainers.image.licenses="MIT"
 
 CMD ["python3", "-u", "/app/launcher.py"]

@@ -29,10 +29,10 @@ without any third-party service in between.
 
 ## Installation
 
-[![Add repository to Home Assistant](https://my.home-assistant.io/badges/supervisor_add_addon_repository.svg)](https://my.home-assistant.io/redirect/supervisor_add_addon_repository/?repository_url=https%3A%2F%2Fgithub.com%2FOWNER%2Fha-garmin-mcp)
+[![Add repository to Home Assistant](https://my.home-assistant.io/badges/supervisor_add_addon_repository.svg)](https://my.home-assistant.io/redirect/supervisor_add_addon_repository/?repository_url=https%3A%2F%2Fgithub.com%2Fmw-hbg%2Fha-garmin-mcp)
 
 1. *Settings → Add-ons → Add-on Store → ⋮ → Repositories*, add
-   `https://github.com/OWNER/ha-garmin-mcp`.
+   `https://github.com/mw-hbg/ha-garmin-mcp`.
 2. Install **Garmin Connect MCP** and start it.
 3. Open **Garmin MCP** in the sidebar, log in to Garmin Connect.
 4. Make the add-on reachable over HTTPS (e.g. with the Cloudflared add-on).

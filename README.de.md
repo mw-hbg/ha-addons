@@ -31,7 +31,7 @@ von Garmin zu deinem KI-Assistenten.
 ## Installation
 
 1. *Einstellungen → Add-ons → Add-on-Store → ⋮ → Repositories*, dort
-   `https://github.com/OWNER/ha-garmin-mcp` eintragen.
+   `https://github.com/mw-hbg/ha-garmin-mcp` eintragen.
 2. **Garmin Connect MCP** installieren und starten.
 3. In der Seitenleiste **Garmin MCP** öffnen und bei Garmin Connect anmelden.
 4. Das Add-on per HTTPS erreichbar machen (z. B. mit dem Cloudflared-Add-on).
