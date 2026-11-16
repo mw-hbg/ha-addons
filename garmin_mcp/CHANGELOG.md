@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.4.2
 
 - The repository is now ready for more apps: tests, image builds and releases work for
   every app folder automatically. When releasing, you choose the app; tags are now named
