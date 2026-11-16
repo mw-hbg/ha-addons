@@ -647,6 +647,10 @@ def _finish_login(garmin: Garmin) -> str:
 def start_login(email: str, password: str) -> str:
     """Returns 'done' or 'mfa'. Raises LoginError."""
     with LOGIN_LOCK:
+        if has_tokens():
+            # A second click while the first login was still running – don't
+            # log in again (Garmin rate-limits repeated logins).
+            return "done"
         PENDING_MFA.clear()
         try:
             garmin = Garmin(email=email, password=password, return_on_mfa=True)
@@ -746,13 +750,17 @@ TEXT = {
         "ok_restart": "Home Assistant is restarting. Reload this page in a minute.",
         "upload_hint": "To let the AI create workouts on your watch, Garmin needs your consent to data uploads (required for EU accounts): Garmin Connect → Settings → Privacy settings → Data → “Upload device data” must be on. If your watch already syncs to Garmin Connect, this is usually already the case.",
         "oauth_hint": "If you also use the ha-mcp add-on with its webhook proxy, your AI app may ask you to log in to your Home Assistant and grant access when adding the connector. That comes from ha-mcp and is harmless – just confirm it.",
+        "login_busy": "Please wait …",
+        "login_wait": "Logging in to Garmin – this can take up to 30 seconds. Please don't click again.",
+        "restart_banner_title": "Restart of Home Assistant required",
+        "restart_busy": "Restarting …",
         "remote": "Remote access",
         "remote_active": "Active – via your Home Assistant address",
         "remote_setting_up": "Setting up …",
         "remote_restart_needed": "Home Assistant must be restarted once",
         "remote_error": "Error",
         "remote_disabled": "Off",
-        "restart_hint": "The add-on has installed a small helper integration that provides the webhook. Home Assistant loads it after one restart.",
+        "restart_hint": "The add-on has installed or updated its small helper integration for remote access. Home Assistant loads it only after a restart – until then the connector cannot work. Logging in to Garmin already works.",
         "restart_ha": "Restart Home Assistant now",
         "restart_confirm": "Restart Home Assistant now? It will be unavailable for about a minute.",
         "no_base_url": "Home Assistant has no external URL configured. Set it under Settings → System → Network, or enter it as “Public base URL” in the add-on configuration – until then, replace the placeholder.",
@@ -810,13 +818,17 @@ TEXT = {
         "ok_restart": "Home Assistant startet neu. Lade diese Seite in einer Minute neu.",
         "upload_hint": "Damit die KI Workouts auf deine Uhr bringen kann, braucht Garmin deine Zustimmung zum Hochladen (Pflicht bei EU-Konten): Garmin Connect → Einstellungen → Datenschutzeinstellungen → Daten → „Gerätedaten hochladen“ muss aktiv sein. Synchronisiert deine Uhr schon mit Garmin Connect, ist das meist bereits der Fall.",
         "oauth_hint": "Nutzt du zusätzlich das Add-on ha-mcp mit seinem Webhook-Proxy, fragt deine KI-App beim Hinzufügen des Connectors eventuell nach einer Anmeldung bei deinem Home Assistant und einer Zugriffsfreigabe. Das kommt von ha-mcp und ist unbedenklich – einfach bestätigen.",
+        "login_busy": "Bitte warten …",
+        "login_wait": "Anmeldung bei Garmin läuft – das kann bis zu 30 Sekunden dauern. Bitte nicht erneut klicken.",
+        "restart_banner_title": "Neustart von Home Assistant erforderlich",
+        "restart_busy": "Startet neu …",
         "remote": "Fernzugriff",
         "remote_active": "Aktiv – über deine Home-Assistant-Adresse",
         "remote_setting_up": "Wird eingerichtet …",
         "remote_restart_needed": "Home Assistant muss einmal neu gestartet werden",
         "remote_error": "Fehler",
         "remote_disabled": "Aus",
-        "restart_hint": "Das Add-on hat eine kleine Hilfs-Integration installiert, die den Webhook bereitstellt. Home Assistant lädt sie nach einem Neustart.",
+        "restart_hint": "Das Add-on hat seine kleine Hilfs-Integration für den Fernzugriff installiert bzw. aktualisiert. Home Assistant lädt sie erst nach einem Neustart – bis dahin kann der Connector nicht funktionieren. Die Anmeldung bei Garmin geht schon.",
         "restart_ha": "Home Assistant jetzt neu starten",
         "restart_confirm": "Home Assistant jetzt neu starten? Es ist dann etwa eine Minute nicht erreichbar.",
         "no_base_url": "In Home Assistant ist keine externe Adresse hinterlegt. Trage sie unter Einstellungen → System → Netzwerk ein oder in der Add-on-Konfiguration als „Öffentliche Adresse“ – bis dahin den Platzhalter ersetzen.",
@@ -840,6 +852,8 @@ button{margin-top:14px;padding:9px 16px;border:0;border-radius:8px;background:va
 button.secondary{background:transparent;color:var(--accent);border:1px solid var(--border)}
 .row{display:flex;gap:8px;align-items:center;flex-wrap:wrap}.row button{margin-top:0}
 code{display:block;padding:9px 11px;border-radius:8px;border:1px solid var(--border);word-break:break-all;font-size:13px;flex:1;min-width:0}
+.busy-note{display:none;margin-top:10px}button:disabled{opacity:.6;cursor:wait}
+.banner{padding:14px 16px;border-radius:12px;margin-bottom:16px;border:2px solid var(--warn)}
 .flash{padding:10px 14px;border-radius:8px;margin-bottom:16px;border:1px solid var(--border)}
 table{border-collapse:collapse}td{padding:3px 16px 3px 0;vertical-align:top}
 """
@@ -847,6 +861,9 @@ table{border-collapse:collapse}td{padding:3px 16px 3px 0;vertical-align:top}
 JS = """
 function toggle(id,btn){const el=document.getElementById(id);const hidden=el.dataset.hidden!=='0';
 el.textContent=hidden?el.dataset.value:el.dataset.mask;el.dataset.hidden=hidden?'0':'1';btn.textContent=hidden?btn.dataset.hide:btn.dataset.show}
+function busy(form){const b=form.querySelector('button[type=submit]');if(form.dataset.busy){return false}
+form.dataset.busy='1';if(b){b.disabled=true;b.textContent=b.dataset.busy||b.textContent}
+const n=form.querySelector('.busy-note');if(n){n.style.display='block'}return true}
 function copyVal(id,btn){navigator.clipboard.writeText(document.getElementById(id).dataset.value).then(()=>{const t=btn.textContent;btn.textContent=btn.dataset.done;setTimeout(()=>btn.textContent=t,1500)})}
 """
 
@@ -908,14 +925,22 @@ async def index(request: Request) -> Response:
         parts.append(f'<div class="flash {kind}">{msg}</div>')
         FLASH.clear()
 
+    # Restart banner – shown above everything else
+    if REMOTE.enabled and REMOTE.state == "restart_needed":
+        parts.append(
+            f'<div class="banner"><b>{t["restart_banner_title"]}</b><p>{t["restart_hint"]}</p>'
+            f'<form method="post" action="restart-ha" onsubmit="return confirm(\'{t["restart_confirm"]}\') && busy(this)">{csrf}'
+            f'<button type="submit" data-busy="{t["restart_busy"]}">{t["restart_ha"]}</button></form></div>'
+        )
+
     # Account card
     account = read_account()
     parts.append(f'<div class="card"><h2>{t["account"]}</h2>')
     if PENDING_MFA:
         parts.append(
-            f'<p>{t["mfa_hint"]}</p><form method="post" action="mfa">{csrf}'
+            f'<p>{t["mfa_hint"]}</p><form method="post" action="mfa" onsubmit="return busy(this)">{csrf}'
             f'<label>{t["mfa_code"]}</label><input name="code" inputmode="numeric" autocomplete="one-time-code" required autofocus>'
-            f'<div class="row"><button type="submit">{t["confirm"]}</button>'
+            f'<div class="row"><button type="submit" data-busy="{t["login_busy"]}">{t["confirm"]}</button>'
             f'<button type="submit" class="secondary" formaction="cancel" formnovalidate>{t["cancel"]}</button></div></form>'
         )
     elif has_tokens():
@@ -928,10 +953,11 @@ async def index(request: Request) -> Response:
         )
     else:
         parts.append(
-            f'<p class="muted">{t["not_connected"]}</p><form method="post" action="login">{csrf}'
+            f'<p class="muted">{t["not_connected"]}</p><form method="post" action="login" onsubmit="return busy(this)">{csrf}'
             f'<label>{t["email"]}</label><input name="email" type="email" autocomplete="username" required>'
             f'<label>{t["password"]}</label><input name="password" type="password" autocomplete="current-password" required>'
-            f'<button type="submit">{t["login"]}</button></form>'
+            f'<button type="submit" data-busy="{t["login_busy"]}">{t["login"]}</button>'
+            f'<p class="muted busy-note">{t["login_wait"]}</p></form>'
         )
     parts.append("</div>")
 
@@ -970,12 +996,6 @@ async def index(request: Request) -> Response:
             + (f' <span class="muted">({html.escape(remote.detail)})</span>' if rstate == "error" and remote.detail else "")
             + "</td></tr></table>"
         )
-        if rstate == "restart_needed":
-            parts.append(
-                f'<p>{t["restart_hint"]}</p><form method="post" action="restart-ha" '
-                f'onsubmit="return confirm(\'{t["restart_confirm"]}\')">{csrf}'
-                f'<button type="submit">{t["restart_ha"]}</button></form>'
-            )
         parts.append(
             f'<label>{t["connector_url"]}</label>{_secret_field("url", url, t)}'
             + ("" if base else f'<p class="muted">{t["no_base_url"]}</p>')

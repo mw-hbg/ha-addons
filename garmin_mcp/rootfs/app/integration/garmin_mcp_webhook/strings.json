@@ -4,5 +4,18 @@
       "already_configured": "Already configured.",
       "single_instance_allowed": "Already configured."
     }
+  },
+  "issues": {
+    "restart_required": {
+      "title": "Garmin Connect MCP: restart required",
+      "fix_flow": {
+        "step": {
+          "confirm": {
+            "title": "Restart Home Assistant",
+            "description": "The Garmin Connect MCP add-on has updated its helper integration to version {version}. Home Assistant must be restarted once to load it. Click Submit to restart now."
+          }
+        }
+      }
+    }
   }
 }

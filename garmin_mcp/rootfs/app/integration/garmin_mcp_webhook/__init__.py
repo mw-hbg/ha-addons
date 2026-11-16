@@ -16,6 +16,8 @@ from __future__ import annotations
 
 import json
 import logging
+from datetime import timedelta
+from pathlib import Path
 from typing import Any
 
 import aiohttp
@@ -27,6 +29,8 @@ from homeassistant.components.webhook import (
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
 from homeassistant.exceptions import ConfigEntryNotReady
+from homeassistant.helpers import issue_registry as ir
+from homeassistant.helpers.event import async_track_time_interval
 
 from .const import CONFIG_FILE, DOMAIN
 
@@ -47,6 +51,17 @@ _DROP_REQUEST_HEADERS = {
     "x-real-ip",
 }
 _ALLOWED_CONTENT_TYPES = ("application/json", "text/event-stream")
+
+
+_MANIFEST = Path(__file__).parent / "manifest.json"
+_RESTART_ISSUE = "restart_required"
+
+
+def _manifest_version() -> str | None:
+    try:
+        return json.loads(_MANIFEST.read_text()).get("version")
+    except (OSError, ValueError):
+        return None
 
 
 def _read_config() -> dict[str, Any] | None:
@@ -87,6 +102,30 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         "webhook_id": webhook_id,
         "session": session,
     }
+    # The add-on replaces these files when it brings a newer version. Python
+    # only loads the new code after a restart, so raise a fixable repair
+    # issue (with a restart button) as soon as the files on disk change.
+    loaded_version = await hass.async_add_executor_job(_manifest_version)
+    ir.async_delete_issue(hass, DOMAIN, _RESTART_ISSUE)
+
+    async def _check_update(_now=None) -> None:
+        on_disk = await hass.async_add_executor_job(_manifest_version)
+        if on_disk and on_disk != loaded_version:
+            ir.async_create_issue(
+                hass,
+                DOMAIN,
+                _RESTART_ISSUE,
+                is_fixable=True,
+                is_persistent=False,
+                severity=ir.IssueSeverity.WARNING,
+                translation_key=_RESTART_ISSUE,
+                translation_placeholders={"version": on_disk},
+            )
+
+    entry.async_on_unload(
+        async_track_time_interval(hass, _check_update, timedelta(minutes=1))
+    )
+
     _LOGGER.info("Garmin Connect MCP remote access enabled")
     return True
 

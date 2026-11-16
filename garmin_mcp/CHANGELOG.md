@@ -6,6 +6,10 @@
   only accept GET, HEAD, POST and PUT.
 - After an update of the helper integration the add-on page now asks for the required
   Home Assistant restart instead of retrying the old code.
+- Restart required? A banner at the top of the add-on page now says so, and after updates of
+  the helper integration Home Assistant shows a repair notice with a restart button (like HACS).
+- Login: the button shows "Please wait …" while Garmin is contacted (can take up to 30 s);
+  repeated clicks no longer trigger repeated logins (Garmin rate-limits those).
 - Hints on the add-on page and in the docs: Garmin upload consent ("Upload device data"),
   two-factor authentication, and the sign-in prompt that appears when ha-mcp is installed.
 

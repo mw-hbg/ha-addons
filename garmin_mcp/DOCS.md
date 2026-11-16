@@ -65,7 +65,9 @@ usually already the case. Without it, writing fails with HTTP 412.
 On first start the add-on installs its helper integration. The add-on page
 then shows **“Home Assistant must be restarted once”** with a button to do so
 (a notification appears as well). After the restart the status changes to
-**Active** – nothing else to set up.
+**Active** – nothing else to set up. When a later add-on update brings a new
+version of the helper integration, Home Assistant shows a **repair notice**
+(*Settings → Repairs*) with a button to restart, just like HACS does.
 
 Requirement: Home Assistant must already be reachable from the internet over
 HTTPS (Nabu Casa, Cloudflare Tunnel, reverse proxy, …). The add-on uses the
