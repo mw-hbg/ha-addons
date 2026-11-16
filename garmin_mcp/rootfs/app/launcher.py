@@ -456,9 +456,13 @@ http {{
             include /tmp/garmin-mcp-proxy.conf;
         }}
 {report_location}
+        # Server not running (not logged in, starting, login failed): a small
+        # stand-in in the app answers proper MCP messages that tell the AI why.
         location @unavailable {{
-            default_type application/json;
-            return 503 '{{"error":"Garmin MCP is not ready. Open the Garmin MCP app page in Home Assistant and log in to Garmin Connect."}}';
+            proxy_pass http://127.0.0.1:{ui_port}/mcp-unavailable;
+            proxy_set_header X-Report-Key "{secret}";
+            proxy_set_header Host 127.0.0.1;
+            proxy_set_header Origin "";
         }}
         location / {{
             return 404;
@@ -528,6 +532,7 @@ class Services:
                 mcp_port=MCP_PORT,
                 secret=self.secret,
                 report_location=self._report_location(),
+                ui_port=UI_PORT,
             ),
         )
 
@@ -1710,6 +1715,76 @@ async def report(request: Request) -> Response:
     return JSONResponse(answer)
 
 
+NOT_READY_TEXT = {
+    "logged_out": (
+        "Garmin Connect is not connected: the Home Assistant app 'Garmin Connect MCP' is not "
+        "logged in. Ask the user to open 'Garmin MCP' in the Home Assistant sidebar and log in "
+        "to Garmin Connect, then try again."
+    ),
+    "failed": (
+        "The Garmin Connect login of the Home Assistant app 'Garmin Connect MCP' is no longer "
+        "valid. Ask the user to open 'Garmin MCP' in the Home Assistant sidebar and log in to "
+        "Garmin Connect again."
+    ),
+    "starting": "The Garmin Connect MCP server is starting. Try again in a minute.",
+}
+
+
+def not_ready_answer(message: dict, reason: str) -> dict | None:
+    """MCP answer of the stand-in server for one JSON-RPC message (None = no answer)."""
+    if not isinstance(message, dict) or "id" not in message:
+        return None  # notification
+    text = NOT_READY_TEXT[reason]
+    method = message.get("method")
+    if method == "initialize":
+        params = message.get("params") if isinstance(message.get("params"), dict) else {}
+        result = {
+            "protocolVersion": str(params.get("protocolVersion") or "2025-06-18"),
+            "capabilities": {"tools": {"listChanged": False}},
+            "serverInfo": {"name": "Garmin Connect MCP (not ready)", "version": os.environ.get("APP_VERSION", "dev")},
+            "instructions": text,
+        }
+    elif method == "tools/list":
+        result = {
+            "tools": [
+                {
+                    "name": "garmin_connection_status",
+                    "description": "Explains why the Garmin Connect tools are not available right now. " + text,
+                    "inputSchema": {"type": "object", "properties": {}},
+                }
+            ]
+        }
+    elif method == "tools/call":
+        result = {"content": [{"type": "text", "text": text}], "isError": True}
+    elif method == "ping":
+        result = {}
+    else:
+        return {"jsonrpc": "2.0", "id": message["id"], "error": {"code": -32601, "message": text}}
+    return {"jsonrpc": "2.0", "id": message["id"], "result": result}
+
+
+async def mcp_unavailable(request: Request) -> Response:
+    """Stand-in MCP endpoint while the Garmin server is not running (via nginx only)."""
+    services = globals().get("SERVICES")
+    key = request.headers.get("x-report-key", "")
+    if services is None or not services.secret or not secrets.compare_digest(key.encode(), services.secret.encode()):
+        return Response("Forbidden", status_code=403)
+    if request.method != "POST":
+        return Response(status_code=405, headers={"Allow": "POST"})
+    body = await request.body()
+    try:
+        data = json.loads(body or b"{}")
+    except ValueError:
+        return JSONResponse({"jsonrpc": "2.0", "id": None, "error": {"code": -32700, "message": "Parse error"}})
+    status_now = await anyio.to_thread.run_sync(services.login_status)
+    reason = status_now if status_now in NOT_READY_TEXT else "starting"
+    if isinstance(data, list):
+        answers = [a for a in (not_ready_answer(m, reason) for m in data) if a is not None]
+        return JSONResponse(answers) if answers else Response(status_code=202)
+    answer = not_ready_answer(data, reason)
+    return JSONResponse(answer) if answer is not None else Response(status_code=202)
+
+
 async def status(request: Request) -> Response:
     if (denied := _guard(request, allow_local=True)) is not None:
         return denied
@@ -1768,6 +1843,7 @@ app = Starlette(
         Route("/status.json", status),
         Route("/lang", set_language),
         Route("/report", report, methods=["POST"]),
+        Route("/mcp-unavailable", mcp_unavailable, methods=["GET", "POST"]),
         Route("/tools", tools_page),
         Route("/tools", save_tools, methods=["POST"]),
         Route("/tools/reset", reset_tools, methods=["POST"]),

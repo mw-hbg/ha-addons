@@ -77,8 +77,19 @@ assert code('http://127.0.0.1:8100/') == 404
 assert code('http://127.0.0.1:8100/mcp', 'POST') == 404
 assert code('http://127.0.0.1:8100/wrong-secret/mcp', 'POST') == 404
 secret = open('/data/secret_path').read().strip()
-# not logged in -> the app answers 503 with a hint instead of the server
-assert code(f'http://127.0.0.1:8100/{secret}/mcp', 'POST') == 503
+# not logged in -> a stand-in answers real MCP messages that tell the AI why
+import json
+def mcp(method, mid=1):
+    req = urllib.request.Request(f'http://127.0.0.1:8100/{secret}/mcp', method='POST',
+        data=json.dumps({'jsonrpc': '2.0', 'id': mid, 'method': method, 'params': {}}).encode(),
+        headers={'Content-Type': 'application/json', 'Accept': 'application/json, text/event-stream'})
+    return json.loads(urllib.request.urlopen(req, timeout=5).read())
+init = mcp('initialize')
+assert init['id'] == 1 and 'not logged in' in init['result']['instructions'], init
+call = mcp('tools/call', 7)
+assert call['id'] == 7 and call['result']['isError'] and 'log in' in call['result']['content'][0]['text'], call
+# the stand-in is only reachable through nginx (it adds the key)
+assert code('http://127.0.0.1:8099/mcp-unavailable', 'POST') == 403
 "
 
 echo "3. Secret path is never written to the log"

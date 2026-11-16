@@ -2,12 +2,18 @@
 
 ## Unreleased
 
+- Improved: when the app is not logged in to Garmin (or the login expired), the AI app now
+  gets a clear message – "ask the user to open Garmin MCP in Home Assistant and log in" –
+  instead of a bare "Service Unavailable".
 - Development: the Raspberry Pi image (aarch64) is now built natively on GitHub's arm64
   runners instead of being emulated – releases take about 2 instead of 6 minutes, and the
   image test now also runs for the Raspberry Pi image.
 
 ---
 
+- Verbessert: Ist die App nicht bei Garmin angemeldet (oder ist die Anmeldung abgelaufen),
+  bekommt die KI-App jetzt eine verständliche Meldung – „bitte in Home Assistant unter Garmin
+  MCP anmelden“ – statt nur „Service Unavailable“.
 - Entwicklung: Das Raspberry-Pi-Image (aarch64) wird jetzt direkt auf den ARM-Rechnern von
   GitHub gebaut statt nachgeahmt – ein Release dauert etwa 2 statt 6 Minuten, und der
   Image-Test läuft jetzt auch für das Raspberry-Pi-Image.

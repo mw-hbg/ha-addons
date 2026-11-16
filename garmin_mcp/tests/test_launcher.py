@@ -110,7 +110,7 @@ def test_secret_path_is_long_random_and_stable():
 
 
 def test_nginx_only_forwards_the_secret_path():
-    conf = L.NGINX_TEMPLATE.format(public_port=8100, mcp_port=8000, secret="S3CRET", report_location="")
+    conf = L.NGINX_TEMPLATE.format(public_port=8100, mcp_port=8000, secret="S3CRET", report_location="", ui_port=8099)
     assert "location = /S3CRET/mcp" in conf
     assert "return 404" in conf
     assert "access_log off" in conf
@@ -186,3 +186,30 @@ def test_connection_test_sends_a_real_client_name(monkeypatch):
     L._mcp_request("https://example.com/x", {})
     assert "python-urllib" not in seen["user-agent"].lower()
     assert "GarminConnectMCP" in seen["user-agent"]
+
+
+# --- not logged in: the AI gets a real MCP answer with the reason ----------------
+
+def test_stand_in_answers_mcp_messages(monkeypatch):
+    from starlette.testclient import TestClient
+
+    services = L.Services()
+    monkeypatch.setattr(L, "SERVICES", services, raising=False)
+    monkeypatch.setattr(services, "login_status", lambda: "logged_out")
+    key = {"X-Report-Key": services.secret}
+    with TestClient(L.app, client=("127.0.0.1", 50000)) as client:
+        assert client.post("/mcp-unavailable", json={"jsonrpc": "2.0", "id": 1, "method": "initialize"}).status_code == 403
+        init = client.post("/mcp-unavailable", headers=key,
+                           json={"jsonrpc": "2.0", "id": 1, "method": "initialize", "params": {"protocolVersion": "2025-06-18"}}).json()
+        assert init["result"]["protocolVersion"] == "2025-06-18" and "not logged in" in init["result"]["instructions"]
+        tools = client.post("/mcp-unavailable", headers=key, json={"jsonrpc": "2.0", "id": 2, "method": "tools/list"}).json()
+        assert tools["result"]["tools"][0]["name"] == "garmin_connection_status"
+        call = client.post("/mcp-unavailable", headers=key,
+                           json={"jsonrpc": "2.0", "id": "x", "method": "tools/call", "params": {"name": "get_activities"}}).json()
+        assert call["id"] == "x" and call["result"]["isError"] and "log in" in call["result"]["content"][0]["text"]
+        note = client.post("/mcp-unavailable", headers=key, json={"jsonrpc": "2.0", "method": "notifications/initialized"})
+        assert note.status_code == 202
+        monkeypatch.setattr(services, "login_status", lambda: "failed")
+        call = client.post("/mcp-unavailable", headers=key, json={"jsonrpc": "2.0", "id": 3, "method": "tools/call"}).json()
+        assert "no longer valid" in call["result"]["content"][0]["text"]
+        assert client.get("/mcp-unavailable", headers=key).status_code == 405
