@@ -68,6 +68,14 @@ UI_PORT = 8099           # Home Assistant ingress
 INGRESS_PROXY_IP = "172.30.32.2"
 ALLOW_ANY_UI_CLIENT = os.environ.get("ALLOW_ANY_UI_CLIENT") == "1"  # tests only
 
+# Remote access through a Home Assistant webhook (default)
+HA_CONFIG = Path(os.environ.get("HA_CONFIG_DIR", "/homeassistant"))
+COMPONENT_SRC = Path(__file__).resolve().parent / "integration" / "garmin_mcp_webhook"
+COMPONENT_DST = HA_CONFIG / "custom_components" / "garmin_mcp_webhook"
+WEBHOOK_CONFIG = HA_CONFIG / ".garmin_mcp_webhook.json"
+WEBHOOK_ID_FILE = DATA / "webhook_id"
+WEBHOOK_DOMAIN = "garmin_mcp_webhook"
+
 ALL_TOOLS = READ_ONLY_TOOLS | ADDITIVE_TOOLS | DESTRUCTIVE_TOOLS
 MFA_TIMEOUT = 600  # seconds a started MFA login stays valid
 
@@ -82,6 +90,7 @@ DEFAULT_OPTIONS = {
     "write_access": "create_only",
     "enable_tools": [],
     "disable_tools": [],
+    "remote_access": "webhook",
     "public_url": "",
     "log_level": "info",
 }
@@ -150,6 +159,17 @@ def get_secret(rotate: bool = False) -> str:
     SECRET_FILE.write_text(value)
     os.chmod(SECRET_FILE, 0o600)
     log.info("Generated a new secret path")
+    return value
+
+
+def get_webhook_id(rotate: bool = False) -> str:
+    if not rotate and WEBHOOK_ID_FILE.exists():
+        value = WEBHOOK_ID_FILE.read_text().strip()
+        if len(value) >= 24:
+            return value
+    value = "garmin_mcp_" + secrets.token_urlsafe(32)
+    WEBHOOK_ID_FILE.write_text(value)
+    os.chmod(WEBHOOK_ID_FILE, 0o600)
     return value
 
 
@@ -357,7 +377,209 @@ class Services:
             self.nginx.terminate()
 
 
+# --------------------------------------------------------------------------
+# Home Assistant Core API (via Supervisor) and webhook remote access
+# --------------------------------------------------------------------------
+def core_api(method: str, path: str, data: dict | None = None, quiet: bool = False):
+    """Call the Home Assistant REST API through the Supervisor proxy."""
+    token = os.environ.get("SUPERVISOR_TOKEN")
+    if not token:
+        return None
+    req = urllib.request.Request(
+        f"http://supervisor/core/api{path}",
+        method=method,
+        data=json.dumps(data).encode() if data is not None else None,
+        headers={"Authorization": f"Bearer {token}", "Content-Type": "application/json"},
+    )
+    try:
+        with urllib.request.urlopen(req, timeout=15) as resp:
+            raw = resp.read()
+            return json.loads(raw) if raw else {}
+    except Exception as exc:  # noqa: BLE001
+        if not quiet:
+            log.debug("HA API %s %s failed: %s", method, path, exc)
+        return None
+
+
+def _own_ip() -> str:
+    try:
+        return socket.gethostbyname(socket.gethostname())
+    except OSError:
+        return socket.gethostname()
+
+
+class RemoteAccess:
+    """Keeps the webhook integration installed, configured and loaded.
+
+    States: disabled (direct mode), setting_up, restart_needed, active, error.
+    """
+
+    def __init__(self, services: "Services") -> None:
+        self.services = services
+        self.enabled = services.options.get("remote_access", "webhook") == "webhook"
+        self.state = "setting_up" if self.enabled else "disabled"
+        self.detail = ""
+        self.webhook_id = get_webhook_id()
+        self._wake = threading.Event()
+        self._config_changed = True
+        self._base_url_cache: tuple[float, str] = (0.0, "")
+
+    # files ---------------------------------------------------------------
+    def _install_component(self) -> bool:
+        """Copy the integration into custom_components. True if files changed."""
+        src_manifest = json.loads((COMPONENT_SRC / "manifest.json").read_text())
+        dst_manifest_file = COMPONENT_DST / "manifest.json"
+        try:
+            dst_version = json.loads(dst_manifest_file.read_text()).get("version")
+        except (OSError, ValueError):
+            dst_version = None
+        if dst_version == src_manifest.get("version"):
+            return False
+        COMPONENT_DST.parent.mkdir(parents=True, exist_ok=True)
+        shutil.rmtree(COMPONENT_DST, ignore_errors=True)
+        shutil.copytree(COMPONENT_SRC, COMPONENT_DST)
+        log.info("Installed Home Assistant integration %s %s", WEBHOOK_DOMAIN, src_manifest.get("version"))
+        return True
+
+    def _write_config(self) -> None:
+        target = f"http://{_own_ip()}:{PUBLIC_PORT}/{self.services.secret}/mcp"
+        content = json.dumps({"webhook_id": self.webhook_id, "target_url": target})
+        try:
+            if WEBHOOK_CONFIG.read_text() == content:
+                return
+        except OSError:
+            pass
+        WEBHOOK_CONFIG.write_text(content)
+        os.chmod(WEBHOOK_CONFIG, 0o600)
+        self._config_changed = True
+
+    # HA config entry -----------------------------------------------------
+    def _entry(self):
+        entries = core_api("GET", f"/config/config_entries/entry?domain={WEBHOOK_DOMAIN}", quiet=True)
+        if entries is None:
+            return None, False
+        for entry in entries if isinstance(entries, list) else []:
+            if entry.get("domain") == WEBHOOK_DOMAIN:
+                return entry, True
+        return None, True
+
+    def _create_entry(self) -> bool:
+        flow = core_api("POST", "/config/config_entries/flow", {"handler": WEBHOOK_DOMAIN}, quiet=True)
+        return isinstance(flow, dict) and flow.get("type") in ("create_entry", "abort")
+
+    def _notify_restart(self) -> None:
+        core_api(
+            "POST",
+            "/services/persistent_notification/create",
+            {
+                "notification_id": "garmin_mcp_restart",
+                "title": "Garmin Connect MCP",
+                "message": (
+                    "Please restart Home Assistant once to activate remote access "
+                    "for the Garmin Connect MCP add-on. / Bitte Home Assistant einmal "
+                    "neu starten, um den Fernzugriff für das Add-on Garmin Connect MCP "
+                    "zu aktivieren."
+                ),
+            },
+        )
+
+    def _dismiss_notification(self) -> None:
+        core_api(
+            "POST",
+            "/services/persistent_notification/dismiss",
+            {"notification_id": "garmin_mcp_restart"},
+            quiet=True,
+        )
+
+    # loop ----------------------------------------------------------------
+    def run(self) -> None:
+        if not self.enabled:
+            return
+        if not HA_CONFIG.is_dir():
+            self.state, self.detail = "error", "no access to the Home Assistant config folder"
+            log.error("Remote access: %s", self.detail)
+            return
+        try:
+            self._install_component()
+        except OSError as exc:
+            self.state, self.detail = "error", str(exc)
+            log.error("Remote access: could not install integration: %s", exc)
+            return
+        while not self.services.stopping:
+            try:
+                self._sync()
+            except Exception as exc:  # noqa: BLE001
+                log.warning("Remote access: %s", exc)
+            self._wake.wait(30 if self.state != "active" else 300)
+            self._wake.clear()
+
+    def _sync(self) -> None:
+        self._write_config()
+        entry, api_ok = self._entry()
+        if not api_ok:
+            self.state, self.detail = "setting_up", "Home Assistant API not reachable"
+            return
+        if entry is None:
+            if self._create_entry():
+                log.info("Remote access: integration set up")
+                entry, _ = self._entry()
+                self._config_changed = False
+            else:
+                if self.state != "restart_needed":
+                    log.info("Remote access: Home Assistant must be restarted once")
+                    self._notify_restart()
+                self.state = "restart_needed"
+                return
+        if entry and entry.get("state") == "loaded" and self._config_changed:
+            core_api("POST", f"/config/config_entries/entry/{entry['entry_id']}/reload")
+            self._config_changed = False
+            entry, _ = self._entry()
+        if entry and entry.get("state") == "loaded":
+            if self.state != "active":
+                log.info("Remote access active")
+                self._dismiss_notification()
+            self.state = "active"
+        elif entry and entry.get("state") in ("setup_retry", "not_loaded"):
+            core_api("POST", f"/config/config_entries/entry/{entry['entry_id']}/reload")
+            self.state = "setting_up"
+        else:
+            self.state = "error"
+            self.detail = f"integration state: {entry.get('state') if entry else 'missing'}"
+
+    def rotate(self) -> None:
+        self.webhook_id = get_webhook_id(rotate=True)
+        self._config_changed = True
+        self._wake.set()
+
+    def nudge(self) -> None:
+        self._config_changed = True
+        self._wake.set()
+
+    def base_url(self) -> str:
+        """Public base URL: option > HA external URL > Nabu Casa remote UI."""
+        configured = (self.services.options.get("public_url") or "").strip().rstrip("/")
+        if configured:
+            return configured if "://" in configured else "https://" + configured
+        cached_at, cached = self._base_url_cache
+        if time.time() - cached_at < 300:
+            return cached
+        url = ""
+        cfg = core_api("GET", "/config", quiet=True)
+        if isinstance(cfg, dict) and cfg.get("external_url"):
+            url = str(cfg["external_url"]).rstrip("/")
+        if not url:
+            cloud = core_api("GET", "/cloud/status", quiet=True)
+            if isinstance(cloud, dict) and cloud.get("remote_domain") and cloud.get("remote_enabled", True):
+                url = f"https://{cloud['remote_domain']}"
+        self._base_url_cache = (time.time(), url)
+        return url
+
+    def restart_home_assistant(self) -> None:
+        core_api("POST", "/services/homeassistant/restart", {})
+
+
 SERVICES: Services  # set in main()
+REMOTE: RemoteAccess  # set in main()
 
 
 # --------------------------------------------------------------------------
@@ -504,6 +726,17 @@ TEXT = {
         "ok_login": "Logged in successfully.",
         "ok_logout": "Logged out. Tokens deleted.",
         "ok_rotate": "New secret URL generated. Update your connectors.",
+        "ok_restart": "Home Assistant is restarting. Reload this page in a minute.",
+        "remote": "Remote access",
+        "remote_active": "Active – via your Home Assistant address",
+        "remote_setting_up": "Setting up …",
+        "remote_restart_needed": "Home Assistant must be restarted once",
+        "remote_error": "Error",
+        "remote_disabled": "Off",
+        "restart_hint": "The add-on has installed a small helper integration that provides the webhook. Home Assistant loads it after one restart.",
+        "restart_ha": "Restart Home Assistant now",
+        "restart_confirm": "Restart Home Assistant now? It will be unavailable for about a minute.",
+        "no_base_url": "Home Assistant has no external URL configured. Set it under Settings → System → Network, or enter it as “Public base URL” in the add-on configuration – until then, replace the placeholder.",
     },
     "de": {
         "title": "Garmin Connect MCP",
@@ -555,6 +788,17 @@ TEXT = {
         "ok_login": "Erfolgreich angemeldet.",
         "ok_logout": "Abgemeldet. Tokens gelöscht.",
         "ok_rotate": "Neue geheime URL erzeugt. Passe deine Connectors an.",
+        "ok_restart": "Home Assistant startet neu. Lade diese Seite in einer Minute neu.",
+        "remote": "Fernzugriff",
+        "remote_active": "Aktiv – über deine Home-Assistant-Adresse",
+        "remote_setting_up": "Wird eingerichtet …",
+        "remote_restart_needed": "Home Assistant muss einmal neu gestartet werden",
+        "remote_error": "Fehler",
+        "remote_disabled": "Aus",
+        "restart_hint": "Das Add-on hat eine kleine Hilfs-Integration installiert, die den Webhook bereitstellt. Home Assistant lädt sie nach einem Neustart.",
+        "restart_ha": "Home Assistant jetzt neu starten",
+        "restart_confirm": "Home Assistant jetzt neu starten? Es ist dann etwa eine Minute nicht erreichbar.",
+        "no_base_url": "In Home Assistant ist keine externe Adresse hinterlegt. Trage sie unter Einstellungen → System → Netzwerk ein oder in der Add-on-Konfiguration als „Öffentliche Adresse“ – bis dahin den Platzhalter ersetzen.",
     },
 }
 
@@ -616,7 +860,7 @@ def _secret_field(fid: str, value: str, t: dict) -> str:
     if "://" in value:
         scheme, rest = value.split("://", 1)
         host = rest.split("/", 1)[0]
-        mask = f"{scheme}://{host}/{'•' * 16}/mcp"
+        mask = f"{scheme}://{host}/{'•' * 20}"
     v = html.escape(value, quote=True)
     m = html.escape(mask, quote=True)
     return (
@@ -682,21 +926,48 @@ async def index(request: Request) -> Response:
     )
 
     # Connection card
-    public = (services.options.get("public_url") or "").strip().rstrip("/")
-    if public and "://" not in public:
-        public = "https://" + public
-    url = f"{public or 'https://<your-domain>'}/{services.secret}/mcp"
+    remote = REMOTE
+    direct_public = (services.options.get("public_url") or "").strip().rstrip("/")
+    if direct_public and "://" not in direct_public:
+        direct_public = "https://" + direct_public
+    direct_url = f"{direct_public or 'https://<your-domain>'}/{services.secret}/mcp"
     internal = f"http://{socket.gethostname()}:{PUBLIC_PORT}"
-    parts.append(
-        f'<div class="card"><h2>{t["connection"]}</h2>'
-        f'<label>{t["connector_url"]}</label>{_secret_field("url", url, t)}'
-        + ("" if public else f'<p class="muted">{t["no_public_url"]}</p>')
-        + f'<p class="warn">{t["secret_warning"]}</p><p>{t["steps"]}</p>'
-        f'<label>{t["internal_url"]}</label><div class="row"><code>{html.escape(internal)}</code></div>'
-        f'<p class="muted">{t["internal_hint"]}</p>'
+    rotate_form = (
         f'<form method="post" action="rotate" onsubmit="return confirm(\'{t["rotate_confirm"]}\')">{csrf}'
-        f'<button type="submit" class="secondary">{t["rotate"]}</button></form></div>'
+        f'<button type="submit" class="secondary">{t["rotate"]}</button></form>'
     )
+    parts.append(f'<div class="card"><h2>{t["connection"]}</h2>')
+    if remote.enabled:
+        base = await anyio.to_thread.run_sync(remote.base_url)
+        url = f"{base or 'https://<your-home-assistant>'}/api/webhook/{remote.webhook_id}"
+        rstate = remote.state
+        rcls = {"active": "ok", "error": "err", "restart_needed": "warn"}.get(rstate, "muted")
+        parts.append(
+            f'<table><tr><td class="muted">{t["remote"]}</td>'
+            f'<td class="{rcls}">{t["remote_" + rstate]}'
+            + (f' <span class="muted">({html.escape(remote.detail)})</span>' if rstate == "error" and remote.detail else "")
+            + "</td></tr></table>"
+        )
+        if rstate == "restart_needed":
+            parts.append(
+                f'<p>{t["restart_hint"]}</p><form method="post" action="restart-ha" '
+                f'onsubmit="return confirm(\'{t["restart_confirm"]}\')">{csrf}'
+                f'<button type="submit">{t["restart_ha"]}</button></form>'
+            )
+        parts.append(
+            f'<label>{t["connector_url"]}</label>{_secret_field("url", url, t)}'
+            + ("" if base else f'<p class="muted">{t["no_base_url"]}</p>')
+            + f'<p class="warn">{t["secret_warning"]}</p><p>{t["steps"]}</p>{rotate_form}'
+        )
+    else:
+        parts.append(
+            f'<label>{t["connector_url"]}</label>{_secret_field("url", direct_url, t)}'
+            + ("" if direct_public else f'<p class="muted">{t["no_public_url"]}</p>')
+            + f'<p class="warn">{t["secret_warning"]}</p><p>{t["steps"]}</p>'
+            f'<label>{t["internal_url"]}</label><div class="row"><code>{html.escape(internal)}</code></div>'
+            f'<p class="muted">{t["internal_hint"]}</p>{rotate_form}'
+        )
+    parts.append("</div>")
 
     body = "".join(parts)
     page = (
@@ -761,7 +1032,17 @@ async def do_rotate(request: Request) -> Response:
         return denied
     if await _form(request) is not None:
         await anyio.to_thread.run_sync(SERVICES.rotate_secret)
+        REMOTE.rotate()
         FLASH.update(kind="ok", key="ok_rotate")
+    return _redirect(request)
+
+
+async def do_restart_ha(request: Request) -> Response:
+    if (denied := _guard(request)) is not None:
+        return denied
+    if await _form(request) is not None:
+        await anyio.to_thread.run_sync(REMOTE.restart_home_assistant)
+        FLASH.update(kind="ok", key="ok_restart")
     return _redirect(request)
 
 
@@ -787,6 +1068,7 @@ app = Starlette(
         Route("/cancel", do_cancel, methods=["POST"]),
         Route("/logout", do_logout, methods=["POST"]),
         Route("/rotate", do_rotate, methods=["POST"]),
+        Route("/restart-ha", do_restart_ha, methods=["POST"]),
         Route("/status.json", status),
     ]
 )
@@ -808,6 +1090,9 @@ def main() -> None:
     SERVICES.start_nginx()
     SERVICES.start_mcp()
     threading.Thread(target=SERVICES.supervise, name="supervisor", daemon=True).start()
+    global REMOTE
+    REMOTE = RemoteAccess(SERVICES)
+    threading.Thread(target=REMOTE.run, name="remote-access", daemon=True).start()
 
     def _stop(*_args):
         SERVICES.shutdown()

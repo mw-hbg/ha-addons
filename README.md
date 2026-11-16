@@ -22,6 +22,8 @@ without any third-party service in between.
   Your password is never stored.
 * **You decide what the AI may do:** read only, create without ever deleting,
   or full access – plus per-tool allow/deny lists.
+* **No extra remote setup:** reachable through the address you already use for
+  Home Assistant (Nabu Casa, Cloudflare Tunnel, reverse proxy …) via a webhook.
 * **Protected endpoint:** only reachable via a long random secret URL, which you
   can rotate with one click.
 * Works with any AI app that supports remote MCP servers (Streamable HTTP).
@@ -35,7 +37,7 @@ without any third-party service in between.
    `https://github.com/mw-hbg/ha-garmin-mcp`.
 2. Install **Garmin Connect MCP** and start it.
 3. Open **Garmin MCP** in the sidebar, log in to Garmin Connect.
-4. Make the add-on reachable over HTTPS (e.g. with the Cloudflared add-on).
+4. Restart Home Assistant once when the add-on page asks for it.
 5. Add the connector URL shown on the add-on page to your AI assistant.
 
 Full instructions: [garmin_mcp/DOCS.md](garmin_mcp/DOCS.md) (also shown in the
@@ -45,8 +47,8 @@ add-on's *Documentation* tab).
 
 * Home Assistant OS or Supervised (add-on support)
 * A Garmin Connect account
-* A way to reach Home Assistant over HTTPS from the internet (Cloudflare Tunnel,
-  reverse proxy, …)
+* Home Assistant reachable over HTTPS from the internet (Nabu Casa, Cloudflare
+  Tunnel, reverse proxy, …)
 
 ## Development
 

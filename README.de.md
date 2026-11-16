@@ -23,6 +23,8 @@ von Garmin zu deinem KI-Assistenten.
   Dein Passwort wird nie gespeichert.
 * **Du entscheidest, was die KI darf:** nur lesen, anlegen ohne je zu löschen
   oder voller Zugriff – plus Freigabe- und Sperrlisten für einzelne Tools.
+* **Kein zusätzlicher Fernzugriff nötig:** erreichbar über die Adresse, mit der du
+  Home Assistant ohnehin von außen nutzt – per Webhook.
 * **Geschützter Endpunkt:** nur über eine lange, zufällige geheime URL
   erreichbar, die du per Klick neu erzeugen kannst.
 * Funktioniert mit jeder KI-App, die Remote-MCP-Server (Streamable HTTP) unterstützt.
@@ -34,8 +36,12 @@ von Garmin zu deinem KI-Assistenten.
    `https://github.com/mw-hbg/ha-garmin-mcp` eintragen.
 2. **Garmin Connect MCP** installieren und starten.
 3. In der Seitenleiste **Garmin MCP** öffnen und bei Garmin Connect anmelden.
-4. Das Add-on per HTTPS erreichbar machen (z. B. mit dem Cloudflared-Add-on).
+4. Home Assistant einmal neu starten, wenn die Add-on-Seite darum bittet.
 5. Die auf der Add-on-Seite angezeigte Connector-URL in deinem KI-Assistenten eintragen.
+
+Voraussetzung: Home Assistant ist bereits von außen per HTTPS erreichbar
+(Nabu Casa, Cloudflare-Tunnel, Reverse Proxy …). Einen zusätzlichen Hostnamen
+oder Tunnel braucht es nicht.
 
 Ausführliche Anleitung (Englisch): [garmin_mcp/DOCS.md](garmin_mcp/DOCS.md),
 auch im Tab *Dokumentation* des Add-ons.

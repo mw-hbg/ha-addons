@@ -14,6 +14,7 @@ text ships inside the image together with the package (Python packages in their
 | [Starlette](https://github.com/encode/starlette) | Add-on web UI | BSD-3-Clause | © Encode OSS Ltd. |
 | [Uvicorn](https://github.com/encode/uvicorn) | Add-on web UI server | BSD-3-Clause | © Encode OSS Ltd. |
 | [python-multipart](https://github.com/Kludex/python-multipart) | Form parsing in the web UI | Apache-2.0 | © Andrew Dunham and contributors |
+| [ha-mcp webhook proxy](https://github.com/homeassistant-ai/ha-mcp) | Design of the webhook remote access (re-implemented, no code copied verbatim) | MIT | © 2024 Julien and contributors |
 | [nginx](https://nginx.org) | Secret-path reverse proxy | BSD-2-Clause | © Igor Sysoev, Nginx, Inc. |
 | [Python](https://www.python.org) / Debian base image | Runtime | PSF License / various free licenses | © Python Software Foundation, Debian contributors |
 

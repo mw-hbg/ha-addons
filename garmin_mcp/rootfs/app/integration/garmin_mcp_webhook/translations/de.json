@@ -1,0 +1,8 @@
+{
+  "config": {
+    "abort": {
+      "already_configured": "Bereits eingerichtet.",
+      "single_instance_allowed": "Bereits eingerichtet."
+    }
+  }
+}

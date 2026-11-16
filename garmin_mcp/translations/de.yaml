@@ -20,16 +20,22 @@ configuration:
   disable_tools:
     name: Einzelne Tools sperren
     description: Tool-Namen, die nie verfügbar sein sollen (z. B. delete_activity).
+  remote_access:
+    name: Fernzugriff
+    description: >-
+      webhook (empfohlen) = erreichbar über deine bestehende Home-Assistant-Adresse
+      (Nabu Casa, Cloudflare-Tunnel, Reverse Proxy …), sonst nichts einzurichten. Installiert
+      eine kleine Hilfs-Integration; Home Assistant muss einmal neu gestartet werden.
+      direct = du leitest einen eigenen HTTPS-Hostnamen auf Port 8100 dieses Add-ons.
   public_url:
     name: Öffentliche Adresse
     description: >-
-      Optional. Die öffentliche HTTPS-Adresse dieses Add-ons, z. B. https://garmin.example.com
-      (Hostname im Cloudflare-Tunnel oder Reverse Proxy). Wird nur genutzt, um dir auf der
-      Add-on-Seite die fertige Connector-URL anzuzeigen.
+      Optional. Nur nötig, wenn die Add-on-Seite deine öffentliche Adresse nicht selbst
+      ermitteln kann. Webhook: deine Home-Assistant-Adresse, z. B. https://home.example.com.
+      Direct: der Hostname, den du auf das Add-on geleitet hast, z. B. https://garmin.example.com.
   log_level:
     name: Protokollstufe
     description: Wie ausführlich das Add-on ins Protokoll schreibt.
 network:
   8100/tcp: >-
-    MCP-Endpunkt. In der Regel leer lassen und das Add-on stattdessen über einen Tunnel
-    oder ein Reverse-Proxy-Add-on erreichen.
+    MCP-Endpunkt für Fernzugriff „direct“. Beim Standard (webhook) leer lassen.

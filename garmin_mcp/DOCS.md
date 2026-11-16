@@ -15,13 +15,21 @@ watch.
 ## How it works
 
 ```
-AI assistant ──HTTPS──► your tunnel / reverse proxy ──► add-on :8100 ──► Garmin Connect
-                                                         (secret path)
+AI assistant ──HTTPS──► your Home Assistant address ──► /api/webhook/<secret id> ──► add-on ──► Garmin Connect
+                        (Nabu Casa, Cloudflare Tunnel,   (helper integration)
+                         reverse proxy …)
 ```
 
-* The MCP server itself listens on loopback only.
-* An nginx in front of it only forwards requests whose URL contains a long
-  random **secret path**. Every other request gets a `404`.
+* By default the add-on is reached through the address you already use to
+  access Home Assistant from outside – **no extra hostname, tunnel or port
+  forwarding**. A small helper integration (`garmin_mcp_webhook`), installed by
+  the add-on, provides a Home Assistant webhook with a long random id and
+  forwards requests to the add-on.
+* Alternatively (`remote_access: direct`) you route your own HTTPS hostname to
+  the add-on's port 8100.
+* The MCP server itself listens on loopback only. An nginx in front of it only
+  forwards requests that carry a long random **secret path**; everything else
+  gets a `404`.
 * The add-on page (sidebar → **Garmin MCP**) is only reachable through Home
   Assistant and only for administrators.
 * Your Garmin password is never stored. After logging in, only the OAuth tokens
@@ -44,14 +52,25 @@ Garmin sends you a code – enter it on the next screen.
 uploads. If writing fails with HTTP 412, grant that consent in the privacy /
 data settings of Garmin Connect and try again.
 
-### 3. Make the endpoint reachable over HTTPS
+### 3. Restart Home Assistant once
 
-AI assistants call MCP servers from the internet, so the add-on needs a public
-**HTTPS** address. Do **not** forward port 8100 on your router without HTTPS.
+On first start the add-on installs its helper integration. The add-on page
+then shows **“Home Assistant must be restarted once”** with a button to do so
+(a notification appears as well). After the restart the status changes to
+**Active** – nothing else to set up.
 
-**Cloudflared add-on (Cloudflare Tunnel)** – add an entry to
-`additional_hosts` in its configuration. The add-on page shows the exact target
-address (*Target for your tunnel / reverse proxy*), for example:
+Requirement: Home Assistant must already be reachable from the internet over
+HTTPS (Nabu Casa, Cloudflare Tunnel, reverse proxy, …). The add-on uses the
+external URL from *Settings → System → Network* (or your Nabu Casa address).
+If it cannot work it out, enter it as **Public base URL** in the add-on
+configuration.
+
+<details>
+<summary>Alternative: own hostname (<code>remote_access: direct</code>)</summary>
+
+Set `remote_access: direct`, then route a public **HTTPS** hostname to the
+target address shown on the add-on page (e.g. with `additional_hosts` in the
+Cloudflared add-on):
 
 ```yaml
 additional_hosts:
@@ -59,17 +78,15 @@ additional_hosts:
     service: http://abcd1234-garmin-mcp:8100
 ```
 
-**Nginx Proxy Manager, Traefik, Caddy, …** – proxy a hostname to the same
-target address. Disable response buffering for it if your proxy supports that.
-
-Then enter the public address (e.g. `https://garmin.example.com`) in the add-on
-option **Public base URL**, so the add-on page shows you the complete connector
-URL.
+Enter that hostname as **Public base URL**. Never forward port 8100 on your
+router without HTTPS.
+</details>
 
 ### 4. Connect your AI assistant
 
 Copy the **Connector URL** from the add-on page. It looks like
-`https://garmin.example.com/<secret>/mcp`.
+`https://home.example.com/api/webhook/garmin_mcp_<secret>` (or
+`https://garmin.example.com/<secret>/mcp` in direct mode).
 
 * **Claude** (claude.ai, desktop, mobile): *Settings → Connectors → Add custom
   connector*, paste the URL, no authentication.
@@ -82,11 +99,18 @@ Copy the **Connector URL** from the add-on page. It looks like
 * **Treat the connector URL like a password.** Anyone who knows it can use your
   Garmin account through the enabled tools. Don't share screenshots or logs that
   contain it. If it leaks, click **Generate new secret URL** on the add-on page.
+* **What the add-on may access in Home Assistant:** it writes only the helper
+  integration (`custom_components/garmin_mcp_webhook`) and its settings file
+  (`.garmin_mcp_webhook.json`) into the configuration folder, and uses the
+  Home Assistant API only to set up that integration, to show the restart
+  notification and – when you click the button – to restart Home Assistant. It
+  does not read or change anything else. With `remote_access: direct` it does
+  not touch the configuration folder at all.
 * **Choose the write access level deliberately** (see below). `read_only` is the
   safest; `create_only` (default) never deletes or overwrites anything.
 * **Optional extra layer – IP allow list:** if you only use one AI service, you
-  can restrict the public hostname to that service's IP ranges, e.g. with a
-  Cloudflare WAF rule. Claude connects from `160.79.104.0/21` (see Anthropic's
+  can restrict the webhook path (`/api/webhook/garmin_mcp_*`) or your own
+  hostname to that service's IP ranges, e.g. with a Cloudflare WAF rule. Claude connects from `160.79.104.0/21` (see Anthropic's
   published IP addresses). Other AI services use other ranges and would be
   blocked by such a rule. Test after enabling it.
 
@@ -98,7 +122,8 @@ Copy the **Connector URL** from the add-on page. It looks like
 | `write_access` | `read_only` – reading only. `create_only` (default) – may also create and schedule workouts, send them to the watch and add entries (weigh-ins, hydration, food logs …), but never delete or overwrite. `full` – also delete and edit (activities, workouts, weigh-ins, courses, …). |
 | `enable_tools` | Individual tools to allow although `write_access` or `tool_areas` would exclude them, e.g. `set_perceived_effort` or `push_workout_to_device`. |
 | `disable_tools` | Individual tools that are never available, e.g. `delete_activity`. Always wins. |
-| `public_url` | Optional public base URL, only used to display the connector URL. |
+| `remote_access` | `webhook` (default) – reachable through your existing Home Assistant address, needs one Home Assistant restart. `direct` – you route your own HTTPS hostname to port 8100. |
+| `public_url` | Optional. Your public Home Assistant address (webhook mode) or your own hostname (direct mode), only used to display the connector URL. |
 | `log_level` | `debug`, `info` (default), `warning`, `error`. |
 
 Changes take effect after restarting the add-on. The add-on page shows how many
@@ -128,14 +153,24 @@ disable_tools: []
 | Status *Garmin login failed* | Tokens expired or were revoked. Log out on the add-on page and log in again. |
 | *Too many requests* during login | Garmin rate-limits logins. Wait a few minutes. |
 | Writing workouts fails with HTTP 412 | EU upload consent missing, see step 2. |
-| Connector shows *couldn't reach the server* | Check the tunnel/proxy target, that the URL contains the current secret, and any firewall/WAF rules. |
+| Status stays *Home Assistant must be restarted once* | Restart Home Assistant (button on the add-on page or *Settings → System → Restart*). |
+| Connector shows *couldn't reach the server* | Check that Home Assistant is reachable from outside, that the URL contains the current secret, and any firewall/WAF rules. |
 | The AI says the tool does not exist | It is disabled by `tool_areas`, `write_access` or `disable_tools`. |
+
+## Uninstalling
+
+Uninstalling the add-on leaves the helper integration in place (it then just
+answers `502`). To remove it completely: *Settings → Devices & services →
+Garmin Connect MCP (remote access) → Delete*, then delete the folder
+`custom_components/garmin_mcp_webhook` and the file `.garmin_mcp_webhook.json`
+from your configuration folder and restart Home Assistant.
 
 ## Credits and licenses
 
 The MCP server is [Taxuspt/garmin_mcp](https://github.com/Taxuspt/garmin_mcp)
 (MIT), using [python-garminconnect](https://github.com/cyberjunky/python-garminconnect)
-(MIT). See `THIRD_PARTY_NOTICES.md` in the repository.
+(MIT). The webhook approach follows the webhook proxy of
+[ha-mcp](https://github.com/homeassistant-ai/ha-mcp) (MIT). See `THIRD_PARTY_NOTICES.md` in the repository.
 
 ## All tools
 

@@ -1,6 +1,6 @@
 ---
 name: Garmin Connect MCP
-version: "0.1.0"
+version: "0.2.0"
 slug: garmin_mcp
 description: >-
   MCP server for Garmin Connect – let AI assistants (Claude, ChatGPT, …)
@@ -12,19 +12,27 @@ arch:
   - amd64
   - aarch64
 ingress: true
+homeassistant_api: true
+map:
+  # Only used to install the small helper integration that provides the
+  # webhook (custom_components/garmin_mcp_webhook) and its config file.
+  - type: homeassistant_config
+    read_only: false
+    path: /homeassistant
 panel_icon: mdi:run-fast
 panel_title: Garmin MCP
 ports:
   8100/tcp: null
 ports_description:
   8100/tcp: >-
-    MCP endpoint (only needed without a tunnel/reverse proxy add-on; protected by the secret path)
+    MCP endpoint for remote_access "direct" (protected by the secret path). Not needed with the default webhook mode.
 options:
   tool_areas:
     - all
   write_access: create_only
   enable_tools: []
   disable_tools: []
+  remote_access: webhook
   public_url: ""
   log_level: info
 schema:
@@ -35,5 +43,6 @@ schema:
     - "str"
   disable_tools:
     - "str"
+  remote_access: "list(webhook|direct)"
   public_url: "str?"
   log_level: "list(debug|info|warning|error)"
