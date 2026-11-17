@@ -116,8 +116,13 @@ Copy the **Connector URL** from the app page. It looks like
 `https://garmin.example.com/<secret>/mcp` in direct mode).
 
 * **Claude** (claude.ai, desktop, mobile): *Settings → Connectors → Add custom
-  connector*, paste the URL, no authentication.
-* **ChatGPT**: add it as a custom connector / remote MCP server (developer mode).
+  connector*, paste the URL, no authentication. One custom connector is included in the
+  free plan.
+* **Mistral Vibe** (formerly Le Chat, chat.mistral.ai – also free): *Intelligence →
+  Connectors → Add Connector → Custom MCP Connector*, any name without spaces (e.g.
+  `GarminConnect`), paste the URL, no authentication. Then switch the connector on in a chat.
+* **ChatGPT** (Plus or higher): enable developer mode, then add the URL as a custom
+  connector / remote MCP server.
 * **Other clients** (Cursor, VS Code, Gemini CLI, Open WebUI, …): add a remote
   MCP server using the *Streamable HTTP* transport and the URL.
 

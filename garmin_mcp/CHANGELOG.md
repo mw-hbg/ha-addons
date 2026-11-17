@@ -4,12 +4,16 @@
 
 - Improved: if Garmin no longer accepts the login, the app page shows **Log in again** right
   away – no need to log out first. Settings and connector URL stay the same.
+- Docs: how to connect Mistral Vibe (formerly Le Chat) – a free alternative to Claude; also
+  tested with this app.
 
 ---
 
 - Verbessert: Akzeptiert Garmin die Anmeldung nicht mehr, zeigt die App-Seite direkt **Neu
   anmelden** – vorher abmelden ist nicht mehr nötig. Einstellungen und Connector-URL bleiben
   gleich.
+- Anleitung: So verbindest du Mistral Vibe (früher Le Chat) – eine kostenlose Alternative zu
+  Claude, ebenfalls mit der App getestet.
 
 ## 0.5.2
 

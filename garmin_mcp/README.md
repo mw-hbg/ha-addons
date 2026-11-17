@@ -39,7 +39,8 @@ without any additional service in between.
   can rotate with one click.
 * **English and German** – app page, configuration, repair notices and documentation;
   more languages can be added without code ([TRANSLATING.md](TRANSLATING.md)).
-* Works with any AI app that supports remote MCP servers (Streamable HTTP).
+* Works with any AI app that supports remote MCP servers (Streamable HTTP) – tested with
+  Claude and Mistral Vibe, both usable for free.
 * Pre-built images for `amd64` and `aarch64` (Raspberry Pi 4/5).
 
 ## Installation
@@ -161,7 +162,7 @@ The connector URL changes when you switch – update it in your AI app.
 * A Garmin Connect account
 * Home Assistant reachable over HTTPS from the internet (Nabu Casa, Cloudflare
   Tunnel, reverse proxy, …)
-* An AI app that supports remote MCP servers (Streamable HTTP), e.g. Claude or ChatGPT
+* An AI app that supports remote MCP servers (Streamable HTTP), e.g. Claude, Mistral Vibe or ChatGPT (Plus)
 
 ## Updates and uninstalling
 

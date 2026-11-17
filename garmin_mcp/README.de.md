@@ -40,7 +40,8 @@ von Garmin zu deinem KI-Assistenten.
   erreichbar, die du per Klick neu erzeugen kannst.
 * **Deutsch und Englisch** – App-Seite, Konfiguration, Reparatur-Hinweise und Anleitung;
   weitere Sprachen lassen sich ohne Code ergänzen ([TRANSLATING.md](TRANSLATING.md)).
-* Funktioniert mit jeder KI-App, die Remote-MCP-Server (Streamable HTTP) unterstützt.
+* Funktioniert mit jeder KI-App, die Remote-MCP-Server (Streamable HTTP) unterstützt –
+  getestet mit Claude und Mistral Vibe, beide auch kostenlos nutzbar.
 * Fertige Images für `amd64` und `aarch64` (Raspberry Pi 4/5).
 
 ## Installation
@@ -167,8 +168,8 @@ Beim Umstellen ändert sich die Connector-URL – trag die neue in deiner KI-App
 * Ein Garmin-Connect-Konto
 * Home Assistant per HTTPS aus dem Internet erreichbar (Nabu Casa, Cloudflare-Tunnel,
   Reverse Proxy …)
-* Eine KI-App, die Remote-MCP-Server (Streamable HTTP) unterstützt, z. B. Claude oder
-  ChatGPT
+* Eine KI-App, die Remote-MCP-Server (Streamable HTTP) unterstützt, z. B. Claude, Mistral Vibe
+  oder ChatGPT (ab Plus)
 
 ## Updates und Deinstallieren
 
