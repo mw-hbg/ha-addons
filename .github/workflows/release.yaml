@@ -27,3 +27,6 @@ jobs:
     with:
       app: garmin_mcp
       version: ${{ inputs.version }}
+    secrets:
+      # Owner's token: release commit, tag and release appear under mw-hbg
+      release-token: ${{ secrets.RELEASE_TOKEN }}

@@ -1,0 +1,15 @@
+name: Republish releases under mw-hbg
+
+# One-off: recreates the releases that github-actions[bot] made, under the
+# owner's name (same tag, title and text). Removed again after it ran.
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  republish:
+    uses: mw-hbg/workflows/.github/workflows/releases-as-owner.yml@main
+    secrets:
+      release-token: ${{ secrets.RELEASE_TOKEN }}

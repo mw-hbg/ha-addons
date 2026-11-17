@@ -212,7 +212,10 @@ Ergebnis von **Verbindung testen** und das App-Protokoll (Reiter *Protokoll*) mi
   dasselbe auf Deutsch unter einer `---`-Linie. `version` in `config.yaml` nie von Hand
   ändern.
 * **Übersetzungen:** siehe [TRANSLATING.md](TRANSLATING.md).
-* **Releases:** *Actions → Release → Run workflow* und die neue Version eintragen. Der
+* **Releases:** *Actions → Release → Run workflow* und die neue Version eintragen. Braucht
+  das Repository-Secret `RELEASE_TOKEN` (feingranularer Token des Besitzers, nur dieses
+  Repository, *Contents: read and write*), damit Release-Commit, Tag und Release unter dem
+  Namen des Besitzers erscheinen. Der
   Ablauf baut und veröffentlicht zuerst die Images, setzt dann die Version, schließt den
   Changelog ab, setzt den Tag (`v1.2.3`) und veröffentlicht das Release – Home Assistant
   bietet ein Update also erst an, wenn die Images existieren.

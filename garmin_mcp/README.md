@@ -201,7 +201,10 @@ URL from it first. Troubleshooting tips: [DOCS.md](DOCS.md).
   then the same in German below a `---` line. Never change `version` in `config.yaml`
   by hand.
 * **Translations:** see [TRANSLATING.md](TRANSLATING.md).
-* **Releases:** *Actions → Release → Run workflow* and enter the new version. The workflow builds and pushes the images first, then sets the version,
+* **Releases:** *Actions → Release → Run workflow* and enter the new version. Needs the
+  repository secret `RELEASE_TOKEN` (fine-grained token of the owner, only this repository,
+  *Contents: read and write*), so that release commit, tag and release appear under the
+  owner's name. The workflow builds and pushes the images first, then sets the version,
   finishes the changelog, tags (`v1.2.3`) and publishes the release – so
   Home Assistant only offers an update once its images exist.
 * **Garmin server updates:** a weekly check (configured in `upstream.yaml`) opens an
