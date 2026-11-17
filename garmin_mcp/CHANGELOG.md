@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.5.1
 
 - Improved: when the app is not logged in to Garmin (or the login expired), the AI app now
   gets a clear message – "ask the user to open Garmin MCP in Home Assistant and log in" –
