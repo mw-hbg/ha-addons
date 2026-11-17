@@ -196,6 +196,19 @@ Home Assistant language:
   app page – the notice then disappears by itself. The AI app gets a clear message
   instead of an error.
 
+## Switching the server off
+
+The helper integration adds the device **Garmin Connect MCP** with the switch
+**Garmin Connect MCP Server** (webhook mode only). Turn it off and no AI app can reach
+your Garmin data any more: Home Assistant answers every request itself with "switched
+off" – nothing is forwarded to the app – and the app stops its Garmin server. Login,
+settings and connector URL stay; turn the switch on and everything works again within
+seconds. The state survives restarts.
+
+The switch is a normal entity: use it in automations (e.g. off at night or while you
+are on holiday), on dashboards or with voice assistants. The app page shows
+*Switched off in Home Assistant* while it is off.
+
 ## Language
 
 The app page uses your browser language, otherwise the Home Assistant language,

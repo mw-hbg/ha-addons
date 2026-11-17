@@ -12,6 +12,10 @@ Requests are forwarded unchanged to the app; responses (JSON or
 Server-Sent Events) are streamed back. Nothing is stored and nothing is logged
 except errors – the webhook id is never written to the log.
 
+The switch "Garmin Connect MCP Server" (switch.py) turns the MCP server off
+and on: while it is off, the webhook answers MCP requests itself and the app
+stops its Garmin server.
+
 The app itself has no access to the Home Assistant API. Everything the app
 page needs to know (external address, language, loaded version) is reported
 to the app by this integration, and the app answers with the Garmin login
@@ -39,7 +43,7 @@ from homeassistant.helpers import issue_registry as ir
 from homeassistant.helpers.event import async_track_time_interval
 
 from .cleanup import async_app_gone, async_delete_files, async_watch_app
-from .const import DOMAIN, ISSUE_LOGIN, ISSUE_RESTART
+from .const import DOMAIN, ISSUE_LOGIN, ISSUE_RESTART, PLATFORMS
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -97,7 +101,11 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         auto_decompress=False,
     )
 
+    runtime: dict = {"webhook_id": webhook_id, "session": session, "enabled": True}
+
     async def handle(hass: HomeAssistant, wid: str, request: web.Request):
+        if not runtime["enabled"]:
+            return await _switched_off(request)
         return await _forward(request, session, target_url)
 
     webhook_register(
@@ -108,10 +116,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         handle,
         allowed_methods=["POST", "GET"],
     )
-    hass.data.setdefault(DOMAIN, {})[entry.entry_id] = {
-        "webhook_id": webhook_id,
-        "session": session,
-    }
+    hass.data.setdefault(DOMAIN, {})[entry.entry_id] = runtime
 
     # The app replaces these files when it brings a newer version. Python
     # only loads the new code after a restart, so raise a fixable repair
@@ -144,6 +149,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
             "language": hass.config.language,
             "integration_version": loaded_version,
             "restart_needed": state["restart_needed"],
+            "mcp_enabled": runtime["enabled"],
         }
         try:
             async with session.post(report_url, json=payload, timeout=aiohttp.ClientTimeout(total=15)) as resp:
@@ -167,6 +173,10 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         elif answer.get("login") in ("ok", "failed", "logged_out"):
             ir.async_delete_issue(hass, DOMAIN, ISSUE_LOGIN)
 
+    runtime["report"] = _report
+    # The switch restores its state here – before the first report to the app.
+    await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
+
     entry.async_on_unload(async_track_time_interval(hass, _check_update, timedelta(minutes=1)))
     entry.async_on_unload(async_track_time_interval(hass, _report, REPORT_INTERVAL))
     hass.async_create_task(_report())
@@ -179,6 +189,8 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
 
 
 async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
+    if not await hass.config_entries.async_unload_platforms(entry, PLATFORMS):
+        return False
     data = hass.data.get(DOMAIN, {}).pop(entry.entry_id, None)
     if data:
         webhook_unregister(hass, data["webhook_id"])
@@ -206,6 +218,59 @@ async def async_remove_entry(hass: HomeAssistant, entry: ConfigEntry) -> None:
                 return
 
     hass.async_create_background_task(_check_later(), f"{DOMAIN} cleanup")
+
+
+SWITCHED_OFF_TEXT = (
+    "The Garmin Connect MCP server is switched off in Home Assistant. Ask the user to turn on "
+    "the switch 'Garmin Connect MCP Server' in Home Assistant, then try again."
+)
+
+
+def switched_off_answer(message) -> dict | None:
+    """MCP answer for one JSON-RPC message while the switch is off (None = no answer)."""
+    if not isinstance(message, dict) or "id" not in message:
+        return None  # notification
+    method = message.get("method")
+    if method == "initialize":
+        params = message.get("params") if isinstance(message.get("params"), dict) else {}
+        result = {
+            "protocolVersion": str(params.get("protocolVersion") or "2025-06-18"),
+            "capabilities": {"tools": {"listChanged": False}},
+            "serverInfo": {"name": "Garmin Connect MCP (switched off)", "version": _manifest_version() or "0"},
+            "instructions": SWITCHED_OFF_TEXT,
+        }
+    elif method == "tools/list":
+        result = {
+            "tools": [
+                {
+                    "name": "garmin_connection_status",
+                    "description": "Explains why the Garmin Connect tools are not available. " + SWITCHED_OFF_TEXT,
+                    "inputSchema": {"type": "object", "properties": {}},
+                }
+            ]
+        }
+    elif method == "tools/call":
+        result = {"content": [{"type": "text", "text": SWITCHED_OFF_TEXT}], "isError": True}
+    elif method == "ping":
+        result = {}
+    else:
+        return {"jsonrpc": "2.0", "id": message["id"], "error": {"code": -32601, "message": SWITCHED_OFF_TEXT}}
+    return {"jsonrpc": "2.0", "id": message["id"], "result": result}
+
+
+async def _switched_off(request: web.Request) -> web.Response:
+    """Answer an MCP request ourselves – nothing is forwarded to the app."""
+    if request.method != "POST":
+        return web.Response(status=405, headers={"Allow": "POST"})
+    try:
+        data = json.loads(await request.read() or b"{}")
+    except ValueError:
+        return web.json_response({"jsonrpc": "2.0", "id": None, "error": {"code": -32700, "message": "Parse error"}})
+    if isinstance(data, list):
+        answers = [a for a in (switched_off_answer(m) for m in data[:50]) if a is not None]
+        return web.json_response(answers) if answers else web.Response(status=202)
+    answer = switched_off_answer(data)
+    return web.json_response(answer) if answer is not None else web.Response(status=202)
 
 
 async def _forward(

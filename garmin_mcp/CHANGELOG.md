@@ -6,8 +6,12 @@
   (one project per repository). **Existing installations:** keep the old repository
   address in Home Assistant – it forwards and updates keep arriving. Adding the new address
   in addition would install a second, separate app (new Garmin login and connector URL).
-- Helper integration 0.3.1: links to the new address and to the issue tracker. As with every
-  update of the helper integration, Home Assistant asks for one restart (repair notice).
+- New: switch **Garmin Connect MCP Server** in Home Assistant (device *Garmin Connect MCP*,
+  webhook mode). Off means no AI app reaches your Garmin data – Home Assistant answers every
+  request itself and the app stops its Garmin server; login and connector URL stay. A normal
+  entity, so it also works in automations, dashboards and with voice assistants.
+- Helper integration 0.4.0 (switch, links to the new address and the issue tracker). As with
+  every update of the helper integration, Home Assistant asks for one restart (repair notice).
 - Development: tests, release and checks now use the shared workflows of
   [mw-hbg/.github](https://github.com/mw-hbg/.github); release tags are now `v1.2.3`.
 
@@ -18,8 +22,13 @@
   Home Assistant stehen lassen – sie wird weitergeleitet, Updates kommen weiter an. Die neue
   Adresse zusätzlich einzutragen, würde eine zweite, getrennte App installieren (neue
   Garmin-Anmeldung und Connector-URL).
-- Hilfs-Integration 0.3.1: Links auf die neue Adresse und den Issue-Tracker. Wie bei jedem
-  Update der Hilfs-Integration bittet Home Assistant einmal um einen Neustart
+- Neu: Schalter **Garmin Connect MCP Server** in Home Assistant (Gerät *Garmin Connect MCP*,
+  Modus webhook). Aus heißt: keine KI-App erreicht deine Garmin-Daten – Home Assistant
+  beantwortet jede Anfrage selbst und die App stoppt ihren Garmin-Server; Anmeldung und
+  Connector-URL bleiben. Eine normale Entität, also auch für Automationen, Dashboards und
+  Sprachassistenten.
+- Hilfs-Integration 0.4.0 (Schalter, Links auf die neue Adresse und den Issue-Tracker). Wie bei
+  jedem Update der Hilfs-Integration bittet Home Assistant einmal um einen Neustart
   (Reparatur-Hinweis).
 - Entwicklung: Tests, Release und Prüfungen nutzen jetzt die gemeinsamen Workflows aus
   [mw-hbg/.github](https://github.com/mw-hbg/.github); Release-Tags heißen jetzt `v1.2.3`.

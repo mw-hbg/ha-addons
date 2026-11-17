@@ -67,6 +67,9 @@ MCP_HOME = DATA / "mcp_home"
 # Written by the MCP server when Garmin rejects the login during a tool call
 # (run_mcp.py); removed on success and on a new login.
 AUTH_FAILED_FILE = MCP_HOME / "auth_failed"
+# Exists while the MCP server is switched off with the switch of the helper
+# integration in Home Assistant (webhook mode only).
+SWITCHED_OFF_FILE = DATA / "mcp_switched_off"
 # The internet-facing MCP server runs as this unprivileged user (created in the
 # Dockerfile). It may only write its tokens, downloads and its home folder –
 # never the Home Assistant configuration folder mapped into the container.
@@ -504,6 +507,10 @@ class Services:
         self.options = load_options()
         self.mcp_env, self.active_tools = tool_selection(self.options)
         self.secret = get_secret()
+        # The switch in Home Assistant exists only in webhook mode.
+        if self.options.get("remote_access", "webhook") != "webhook":
+            SWITCHED_OFF_FILE.unlink(missing_ok=True)
+        self.switched_off = SWITCHED_OFF_FILE.exists()
         self._mcp_failures = 0
         self._login_failures = 0
         self._next_login_retry = 0.0
@@ -558,6 +565,9 @@ class Services:
     def start_mcp(self) -> None:
         with self.lock:
             if self.mcp and self.mcp.poll() is None:
+                return
+            if self.switched_off:
+                log.info("The MCP server is switched off in Home Assistant")
                 return
             if not has_tokens():
                 log.info("Not logged in to Garmin Connect yet – open the app page to log in")
@@ -614,6 +624,24 @@ class Services:
             except subprocess.TimeoutExpired:
                 proc.kill()
 
+    def set_switched_off(self, off: bool) -> None:
+        """Switch of the helper integration in Home Assistant: stop or start the server."""
+        with self.lock:
+            if off == self.switched_off:
+                return
+            self.switched_off = off
+            if off:
+                SWITCHED_OFF_FILE.touch()
+            else:
+                SWITCHED_OFF_FILE.unlink(missing_ok=True)
+        if off:
+            log.info("MCP server switched off in Home Assistant")
+            self.stop_mcp()
+        else:
+            log.info("MCP server switched on in Home Assistant")
+            self._mcp_failures = 0
+            self.start_mcp()
+
     def restart_mcp(self) -> None:
         self.stop_mcp()
         self._mcp_failures = 0
@@ -648,6 +676,8 @@ class Services:
     # supervision ---------------------------------------------------------
     def _check_login(self) -> None:
         """Tell the user in Home Assistant when the Garmin login stops working."""
+        if self.switched_off:
+            return
         state = self.mcp_state() if has_tokens() else "stopped"
         if state == "ready":
             self._login_failures = 0
@@ -666,14 +696,20 @@ class Services:
             self.restart_mcp()
 
     def shown_state(self) -> str:
-        """mcp_state, but 'failed' while Garmin rejects the login of the running server."""
+        """mcp_state, but 'failed' while Garmin rejects the login of the running
+        server and 'off' while it is switched off in Home Assistant."""
+        if self.switched_off:
+            return "off"
         state = self.mcp_state()
         if state == "ready" and AUTH_FAILED_FILE.exists():
             return "failed"
         return state
 
     def login_status(self) -> str:
-        """For the helper integration: 'ok', 'failed' (after retries), 'logged_out' or 'starting'."""
+        """For the helper integration: 'ok', 'failed' (after retries), 'logged_out',
+        'starting' or 'off' (switched off in Home Assistant)."""
+        if self.switched_off:
+            return "off"
         if not has_tokens():
             return "logged_out"
         state = self.mcp_state()
@@ -866,7 +902,11 @@ class RemoteAccess:
             "restart_needed": bool(report.get("restart_needed")),
         }
         self._update_state()
+        # Switch "Server" of the helper integration; older versions don't send it.
+        if isinstance(report.get("mcp_enabled"), bool):
+            self.services.set_switched_off(not report["mcp_enabled"])
         return {
+            "mcp_enabled": not self.services.switched_off,
             "login": self.services.login_status(),
             "notify": bool(self.services.options.get("login_notification", True)),
             "app_version": os.environ.get("APP_VERSION", "dev"),
@@ -1388,7 +1428,7 @@ async def index(request: Request) -> Response:
 
     # Server card
     state = await anyio.to_thread.run_sync(services.shown_state)
-    state_cls = {"ready": "ok", "failed": "err", "pending": "warn"}.get(state, "muted")
+    state_cls = {"ready": "ok", "failed": "err", "pending": "warn", "off": "warn"}.get(state, "muted")
     custom = SELECTION_FILE.exists()
     wa = services.options.get("write_access", "create_only")
     rights = t["custom_selection"] if custom else t.get("wa_" + wa, wa)
@@ -1760,6 +1800,10 @@ NOT_READY_TEXT = {
         "Garmin Connect again."
     ),
     "starting": "The Garmin Connect MCP server is starting. Try again in a minute.",
+    "off": (
+        "The Garmin Connect MCP server is switched off in Home Assistant. Ask the user to turn "
+        "on the switch 'Garmin Connect MCP Server' in Home Assistant, then try again."
+    ),
 }
 
 

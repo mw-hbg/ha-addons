@@ -198,6 +198,20 @@ in der Sprache von Home Assistant:
   App-Seite neu anmelden – der Hinweis verschwindet dann von selbst. Die KI-App bekommt in
   dem Fall eine verständliche Meldung statt eines Fehlers.
 
+## Server ausschalten
+
+Die Hilfs-Integration legt das Gerät **Garmin Connect MCP** mit dem Schalter
+**Garmin Connect MCP Server** an (nur im Modus webhook). Ist er aus, erreicht keine
+KI-App mehr deine Garmin-Daten: Home Assistant beantwortet jede Anfrage selbst mit
+„ausgeschaltet“ – nichts wird an die App weitergeleitet – und die App stoppt ihren
+Garmin-Server. Anmeldung, Einstellungen und Connector-URL bleiben; Schalter wieder an,
+und nach wenigen Sekunden funktioniert alles wie vorher. Der Zustand übersteht
+Neustarts.
+
+Der Schalter ist eine normale Entität: in Automationen nutzbar (z. B. nachts oder im
+Urlaub aus), auf Dashboards oder mit Sprachassistenten. Solange er aus ist, zeigt die
+App-Seite *In Home Assistant ausgeschaltet*.
+
 ## Sprache
 
 Die App-Seite erscheint in der Sprache deines Browsers, sonst in der Sprache von Home

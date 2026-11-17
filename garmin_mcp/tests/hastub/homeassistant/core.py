@@ -13,6 +13,23 @@ class _ConfigEntries:
         self.reloaded = []
         self.remove_hook = None  # like HA: removing an entry calls async_remove_entry
 
+    async def async_forward_entry_setups(self, entry, platforms):
+        """Like Home Assistant: load each platform module and add its entities."""
+        import importlib
+
+        self.entities = getattr(self, "entities", [])
+        for platform in platforms:
+            module = importlib.import_module(f"{entry.domain}.{platform}")
+            added = []
+            await module.async_setup_entry(self.hass, entry, added.extend)
+            for entity in added:
+                await entity.async_added_to_hass()
+            self.entities.extend(added)
+
+    async def async_unload_platforms(self, entry, platforms):
+        self.entities = []
+        return True
+
     def async_entries(self, domain=None):
         return list(self.entries)
 

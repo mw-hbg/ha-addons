@@ -26,5 +26,12 @@
   "removal": {
     "title": "Garmin Connect MCP entfernt",
     "message": "Die App Garmin Connect MCP wurde deinstalliert. Ihre Hilfs-Integration für den Fernzugriff hat sich deshalb selbst entfernt (samt Dateien). Sonst ist nichts zu tun – ein Neustart ist nicht nötig."
+  },
+  "entity": {
+    "switch": {
+      "mcp_server": {
+        "name": "Server"
+      }
+    }
   }
 }

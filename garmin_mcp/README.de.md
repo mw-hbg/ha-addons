@@ -27,6 +27,9 @@ von Garmin zu deinem KI-Assistenten.
   oder voller Zugriff – plus Freigabe- und Sperrlisten für einzelne Tools.
 * **Kein zusätzlicher Fernzugriff nötig:** erreichbar über die Adresse, mit der du
   Home Assistant ohnehin von außen nutzt – per Webhook.
+* **Ein/Aus-Schalter in Home Assistant** – eine normale Schalter-Entität, auch für
+  Automationen: aus heißt, keine KI-App erreicht deine Daten; Anmeldung und
+  Connector-URL bleiben.
 * **Verbindungstest** per Klick – Server, Garmin-Anmeldung und Connector-URL
   aus dem Internet.
 * **Kein Zugriff auf die Home-Assistant-API**, ein AppArmor-Profil für die ganze App

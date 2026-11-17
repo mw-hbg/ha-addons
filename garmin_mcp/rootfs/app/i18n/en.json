@@ -20,6 +20,7 @@
     "state_pending": "Starting …",
     "state_failed": "Garmin login failed – please log in again",
     "state_stopped": "Stopped (not logged in)",
+    "state_off": "Switched off in Home Assistant (switch “Garmin Connect MCP Server”)",
     "tools": "Active tools",
     "write_access": "Write access",
     "wa_read_only": "read only",

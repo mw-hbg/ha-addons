@@ -20,6 +20,7 @@
     "state_pending": "Startet …",
     "state_failed": "Garmin-Anmeldung fehlgeschlagen – bitte neu anmelden",
     "state_stopped": "Gestoppt (nicht angemeldet)",
+    "state_off": "In Home Assistant ausgeschaltet (Schalter „Garmin Connect MCP Server“)",
     "tools": "Aktive Tools",
     "write_access": "Schreibrechte",
     "wa_read_only": "nur lesen",

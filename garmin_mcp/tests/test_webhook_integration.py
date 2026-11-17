@@ -328,3 +328,109 @@ def test_entry_removed_while_app_installed_keeps_files(tmp_path, monkeypatch):
         assert folder.exists() and not notes.CREATED
 
     asyncio.run(run())
+
+
+# --- switch "Garmin Connect MCP Server" -------------------------------------------------
+
+def test_switch_has_names_and_icons_in_every_language():
+    base = integration._MANIFEST.parent
+    for name in ("strings.json", "translations/en.json", "translations/de.json"):
+        data = json.loads((base / name).read_text())
+        assert data["entity"]["switch"]["mcp_server"]["name"]
+    icons = json.loads((base / "icons.json").read_text())
+    assert icons["entity"]["switch"]["mcp_server"]["default"].startswith("mdi:")
+
+
+def test_switched_off_answers_without_the_app():
+    answer = integration.switched_off_answer({"jsonrpc": "2.0", "id": 1, "method": "initialize", "params": {}})
+    assert "switched off" in answer["result"]["instructions"]
+    call = integration.switched_off_answer({"jsonrpc": "2.0", "id": 2, "method": "tools/call"})
+    assert call["result"]["isError"] and "turn on" in call["result"]["content"][0]["text"]
+    assert integration.switched_off_answer({"jsonrpc": "2.0", "method": "notifications/initialized"}) is None
+    assert "error" in integration.switched_off_answer({"jsonrpc": "2.0", "id": 3, "method": "other"})
+
+
+def test_switch_blocks_the_webhook_and_tells_the_app(monkeypatch):
+    from homeassistant.helpers import restore_state
+
+    restore_state.LAST_STATE["value"] = None
+
+    async def run():
+        reports, forwarded = [], []
+
+        async def fake_report(request):
+            reports.append(await request.json())
+            return web.json_response({"login": "off" if not reports[-1]["mcp_enabled"] else "ok"})
+
+        async def fake_mcp(request):
+            forwarded.append(await request.json())
+            return web.json_response({"jsonrpc": "2.0", "id": 1, "result": {"from": "app"}})
+
+        app_server = web.Application()
+        app_server.router.add_post("/key/ha", fake_report)
+        app_server.router.add_post("/key/mcp", fake_mcp)
+        runner = web.AppRunner(app_server)
+        await runner.setup()
+        await web.TCPSite(runner, "127.0.0.1", 18126).start()
+        monkeypatch.setattr(integration, "async_track_time_interval", lambda h, action, i: lambda: None)
+        hass = HomeAssistant()
+        entry = ConfigEntry("sw", {"webhook_id": "whs", "target_url": "http://127.0.0.1:18126/key/mcp", "report_url": "http://127.0.0.1:18126/key/ha"})
+
+        ha = web.Application()
+        async def ha_route(request):
+            return await REGISTERED[request.match_info["wid"]](hass, "whs", request)
+
+        ha.router.add_route("*", "/api/webhook/{wid}", ha_route)
+        ha_runner = web.AppRunner(ha)
+        await ha_runner.setup()
+        await web.TCPSite(ha_runner, "127.0.0.1", 18127).start()
+
+        async def call():
+            async with ClientSession() as s:
+                async with s.post("http://127.0.0.1:18127/api/webhook/whs", json={"jsonrpc": "2.0", "id": 1, "method": "tools/call"}) as r:
+                    return await r.json()
+
+        try:
+            await integration.async_setup_entry(hass, entry)
+            await asyncio.gather(*hass.tasks)
+            switch = hass.config_entries.entities[0]
+            assert switch.is_on and switch._attr_unique_id == "sw_mcp_server"
+            assert reports[-1]["mcp_enabled"] is True
+            assert (await call())["result"] == {"from": "app"}
+
+            await switch.async_turn_off()
+            assert not switch.is_on and switch.written_states[-1] == "off"
+            assert reports[-1]["mcp_enabled"] is False  # app told right away
+            answer = await call()
+            assert answer["result"]["isError"] and len(forwarded) == 1  # nothing reached the app
+
+            await switch.async_turn_on()
+            assert reports[-1]["mcp_enabled"] is True
+            assert (await call())["result"] == {"from": "app"} and len(forwarded) == 2
+        finally:
+            await integration.async_unload_entry(hass, entry)
+            await runner.cleanup()
+            await ha_runner.cleanup()
+
+    asyncio.run(run())
+
+
+@pytest.mark.parametrize("last, expected", [(None, True), ("on", True), ("off", False), ("unavailable", True)])
+def test_switch_restores_its_state(monkeypatch, last, expected):
+    from homeassistant.helpers import restore_state
+
+    restore_state.LAST_STATE["value"] = last
+    monkeypatch.setattr(integration, "async_track_time_interval", lambda h, action, i: lambda: None)
+
+    async def run():
+        hass = HomeAssistant()
+        entry = ConfigEntry("rs", {"webhook_id": "whx", "target_url": "http://127.0.0.1:1/x"})
+        try:
+            await integration.async_setup_entry(hass, entry)
+            assert hass.config_entries.entities[0].is_on is expected
+            assert hass.data["garmin_mcp_webhook"]["rs"]["enabled"] is expected
+        finally:
+            await integration.async_unload_entry(hass, entry)
+            restore_state.LAST_STATE["value"] = None
+
+    asyncio.run(run())

@@ -369,3 +369,53 @@ def test_app_shows_failed_login_from_the_marker(monkeypatch, tmp_path):
     assert services.login_status() == "ok" and services.shown_state() == "ready"
     (tmp_path / "auth_failed").write_text("x")
     assert services.login_status() == "failed" and services.shown_state() == "failed"
+
+
+# --- switch "Garmin Connect MCP Server" in Home Assistant ----------------------------
+
+def test_switch_in_home_assistant_stops_and_starts_the_server(monkeypatch):
+    L.SWITCHED_OFF_FILE.unlink(missing_ok=True)
+    services = L.Services()
+    calls = []
+    monkeypatch.setattr(services, "stop_mcp", lambda: calls.append("stop"))
+    monkeypatch.setattr(services, "start_mcp", lambda: calls.append("start"))
+    remote = L.RemoteAccess(services)
+    version = remote.bundled_version()
+
+    answer = remote.receive_report({"integration_version": version, "mcp_enabled": False})
+    assert calls == ["stop"] and answer["mcp_enabled"] is False
+    assert services.switched_off and L.SWITCHED_OFF_FILE.exists()
+    assert services.login_status() == "off" and services.shown_state() == "off"
+
+    remote.receive_report({"integration_version": version, "mcp_enabled": False})
+    remote.receive_report({"integration_version": version})  # older integration: no change
+    assert calls == ["stop"]
+
+    answer = remote.receive_report({"integration_version": version, "mcp_enabled": True})
+    assert calls == ["stop", "start"] and answer["mcp_enabled"] is True
+    assert not services.switched_off and not L.SWITCHED_OFF_FILE.exists()
+
+
+def test_switched_off_server_is_not_started_and_survives_a_restart(monkeypatch):
+    L.SWITCHED_OFF_FILE.touch()
+    try:
+        services = L.Services()
+        assert services.switched_off
+        monkeypatch.setattr(L.subprocess, "Popen", lambda *a, **k: pytest.fail("must not start"))
+        services.start_mcp()
+        assert services.mcp is None
+    finally:
+        L.SWITCHED_OFF_FILE.unlink(missing_ok=True)
+
+
+def test_switch_only_counts_in_webhook_mode(monkeypatch):
+    L.SWITCHED_OFF_FILE.touch()
+    original = L.load_options
+    monkeypatch.setattr(L, "load_options", lambda: {**original(), "remote_access": "direct"})
+    services = L.Services()
+    assert not services.switched_off and not L.SWITCHED_OFF_FILE.exists()
+
+
+def test_stand_in_explains_the_switch():
+    answer = L.not_ready_answer({"jsonrpc": "2.0", "id": 1, "method": "tools/call"}, "off")
+    assert "switched off in Home Assistant" in answer["result"]["content"][0]["text"]
