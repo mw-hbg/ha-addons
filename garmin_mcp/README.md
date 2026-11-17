@@ -34,8 +34,8 @@ without any additional service in between.
   helper integration needs a restart (the very first restart after installing is only
   shown on the app page).
 * **No access to the Home Assistant API**, an AppArmor profile for the whole app
-  (security rating 8/8) and the MCP server locked into its own folders (unprivileged user
-  + Linux Landlock) – nothing in Home Assistant can be changed from outside through this
+  (security rating 8/8) and the MCP server running as an unprivileged user (plus Linux Landlock where the kernel
+  offers it) – nothing in Home Assistant can be changed from outside through this
   app.
 * **Protected endpoint:** only reachable via a long random secret URL, which you
   can rotate with one click.
@@ -102,8 +102,8 @@ app's *Documentation* tab).
 * **The app cannot change Home Assistant:** no access to the Home Assistant API. Its only
   access is the configuration folder, and its AppArmor profile allows only the helper
   integration's own folder there. The MCP
-  server – the only part reachable from the internet – runs as an unprivileged user and
-  is locked into its own folders with Linux Landlock.
+  server – the only part reachable from the internet – runs as an unprivileged user (and,
+  where the kernel offers Linux Landlock, locks itself into its own folders).
 
 Details: *Security* in [DOCS.md](DOCS.md). Found a vulnerability? Please report it
 privately – see [SECURITY.md](../SECURITY.md).

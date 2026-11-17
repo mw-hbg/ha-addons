@@ -159,10 +159,13 @@ Die **Connector-URL** von der App-Seite kopieren. Sie sieht so aus:
   darf sie nur `custom_components/garmin_mcp_webhook` anfassen; `secrets.yaml` lesen oder
   dort sonst etwas ändern, andere Programme als Python und nginx starten oder
   Systemeinstellungen ändern kann sie nicht. Home Assistant bewertet die App mit 8 von 8.
-* **Der MCP-Server ist eingesperrt:** Er läuft als eingeschränkter Benutzer und sperrt
-  sich zusätzlich mit *Landlock* (Linux-Kernel) selbst ein: Er erreicht nur seine eigenen
-  Ordner (Garmin-Tokens, Downloads) – nicht den Home-Assistant-Konfigurationsordner (nicht
-  einmal lesend), nicht die Geheimnisse der App und nicht die App-Seite. Datei-Tools
+* **Der MCP-Server ist eingesperrt:** Er läuft als eingeschränkter Benutzer und kann
+  deshalb weder die Geheimnisse der App lesen noch die Hilfs-Integration ändern; das
+  AppArmor-Profil hält ihn vom übrigen Home-Assistant-Konfigurationsordner fern (nicht
+  einmal lesend). Wo der Linux-Kernel *Landlock* anbietet, sperrt er sich zusätzlich in
+  seine eigenen Ordner (Garmin-Tokens, Downloads) ein. Home Assistant OS bietet Landlock
+  derzeit nicht an – im App-Protokoll steht dann *Landlock is not available here*; das ist
+  so erwartet. Datei-Tools
   (Strecke hochladen, Aktivität herunterladen) arbeiten nur im Download-Ordner.
 * **Schreibrechte bewusst wählen** (siehe unten). `read_only` ist am sichersten;
   `create_only` (Standard) löscht oder überschreibt nie etwas.

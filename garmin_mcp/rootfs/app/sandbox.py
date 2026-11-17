@@ -79,8 +79,10 @@ def restrict(write_dirs: list[str], read_dirs: tuple[str, ...] = READ_PATHS) -> 
     libc.syscall.restype = ctypes.c_long
     abi = libc.syscall(_SYS_CREATE_RULESET, None, ctypes.c_size_t(0), ctypes.c_uint32(_CREATE_RULESET_VERSION))
     if abi < 1:
-        log.warning(
-            "Landlock is not available here (errno %d) – the MCP server is limited by its unprivileged user only",
+        # Expected on Home Assistant OS (its kernel has no Landlock) – not an error.
+        log.info(
+            "Landlock is not available here (errno %d) – the MCP server stays limited by its"
+            " unprivileged user and the AppArmor profile",
             ctypes.get_errno(),
         )
         return False

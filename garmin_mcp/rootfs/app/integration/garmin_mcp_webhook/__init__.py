@@ -43,7 +43,7 @@ from homeassistant.helpers import issue_registry as ir
 from homeassistant.helpers.event import async_track_time_interval
 
 from .cleanup import async_app_gone, async_delete_files, async_watch_app
-from .const import DOMAIN, ISSUE_LOGIN, ISSUE_RESTART, PLATFORMS
+from .const import DOMAIN, ISSUE_LOGIN, ISSUE_RESTART, PLATFORMS, VERSION
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -121,7 +121,10 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     # The app replaces these files when it brings a newer version. Python
     # only loads the new code after a restart, so raise a fixable repair
     # issue (with a restart button) as soon as the files on disk change.
-    loaded_version = await hass.async_add_executor_job(_manifest_version)
+    # The version of the code that is RUNNING comes from const.py – the
+    # manifest on disk may already be newer (e.g. after a reinstall while
+    # Home Assistant still has the old module in memory).
+    loaded_version = VERSION
     ir.async_delete_issue(hass, DOMAIN, ISSUE_RESTART)
     state = {"restart_needed": False}
 
@@ -179,6 +182,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
 
     entry.async_on_unload(async_track_time_interval(hass, _check_update, timedelta(minutes=1)))
     entry.async_on_unload(async_track_time_interval(hass, _report, REPORT_INTERVAL))
+    await _check_update()  # before the first report, so the app learns it right away
     hass.async_create_task(_report())
 
     # Remove ourselves once the app has been uninstalled (see cleanup.py).
@@ -236,7 +240,7 @@ def switched_off_answer(message) -> dict | None:
         result = {
             "protocolVersion": str(params.get("protocolVersion") or "2025-06-18"),
             "capabilities": {"tools": {"listChanged": False}},
-            "serverInfo": {"name": "Garmin Connect MCP (switched off)", "version": _manifest_version() or "0"},
+            "serverInfo": {"name": "Garmin Connect MCP (switched off)", "version": VERSION},
             "instructions": SWITCHED_OFF_TEXT,
         }
     elif method == "tools/list":

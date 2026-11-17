@@ -1,5 +1,26 @@
 # Changelog
 
+## Unreleased
+
+- Fixed: after reinstalling the app without restarting Home Assistant, the old helper
+  integration could keep running (e.g. without the new switch) and neither the app page nor
+  Home Assistant asked for a restart. The helper now reports the version of the code that
+  is actually running, so the restart notice appears right away. Helper integration 0.4.1.
+- Docs: Landlock is used only where the Linux kernel offers it – Home Assistant OS
+  currently does not (the log line "Landlock is not available here" is expected); the
+  unprivileged user and the AppArmor profile always apply.
+
+---
+
+- Behoben: Nach einer Neuinstallation der App ohne Neustart von Home Assistant konnte die
+  alte Hilfs-Integration weiterlaufen (z. B. ohne den neuen Schalter), ohne dass App-Seite
+  oder Home Assistant einen Neustart verlangten. Die Hilfs-Integration meldet jetzt die
+  Version des Codes, der tatsächlich läuft – der Neustart-Hinweis erscheint sofort.
+  Hilfs-Integration 0.4.1.
+- Anleitung: Landlock wird nur genutzt, wo der Linux-Kernel es anbietet – Home Assistant OS
+  tut das derzeit nicht (die Protokollzeile „Landlock is not available here“ ist erwartet);
+  eingeschränkter Benutzer und AppArmor-Profil gelten immer.
+
 ## 0.5.4
 
 - The repository moved to its own address: `https://github.com/mw-hbg/ha-garmin-mcp`

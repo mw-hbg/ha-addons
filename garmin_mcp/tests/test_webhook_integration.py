@@ -434,3 +434,46 @@ def test_switch_restores_its_state(monkeypatch, last, expected):
             restore_state.LAST_STATE["value"] = None
 
     asyncio.run(run())
+
+
+# --- restart notice: the RUNNING code's version counts, not the files on disk ----------
+
+def test_code_version_matches_the_manifest():
+    from garmin_mcp_webhook.const import VERSION
+
+    assert json.loads(integration._MANIFEST.read_text())["version"] == VERSION
+
+
+def test_old_code_in_memory_with_newer_files_asks_for_a_restart(monkeypatch):
+    """Reinstall without restart: Home Assistant still runs the old module while
+    the app already copied newer files – the notice must appear right away and
+    the app must be told the old version."""
+    monkeypatch.setattr(integration, "VERSION", "0.0.1")
+    monkeypatch.setattr(integration, "async_track_time_interval", lambda h, action, i: lambda: None)
+
+    async def run():
+        reports = []
+
+        async def fake_report(request):
+            reports.append(await request.json())
+            return web.json_response({"login": "ok"})
+
+        app_server = web.Application()
+        app_server.router.add_post("/key/ha", fake_report)
+        runner = web.AppRunner(app_server)
+        await runner.setup()
+        await web.TCPSite(runner, "127.0.0.1", 18128).start()
+        hass = HomeAssistant()
+        entry = ConfigEntry("old", {"webhook_id": "who", "target_url": "http://127.0.0.1:1/x", "report_url": "http://127.0.0.1:18128/key/ha"})
+        try:
+            await integration.async_setup_entry(hass, entry)
+            await asyncio.gather(*hass.tasks)
+            assert ("garmin_mcp_webhook", "restart_required") in issue_registry.ISSUES
+            assert reports[-1]["integration_version"] == "0.0.1"
+            assert reports[-1]["restart_needed"] is True
+        finally:
+            await integration.async_unload_entry(hass, entry)
+            issue_registry.ISSUES.pop(("garmin_mcp_webhook", "restart_required"), None)
+            await runner.cleanup()
+
+    asyncio.run(run())

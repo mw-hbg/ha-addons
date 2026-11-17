@@ -158,10 +158,12 @@ Copy the **Connector URL** from the app page. It looks like
   configuration folder it can only touch `custom_components/garmin_mcp_webhook`; it
   cannot read `secrets.yaml` or change anything else there, start other programs than
   Python and nginx or change system settings. Home Assistant rates the app 8 of 8.
-* **The MCP server is locked in:** it runs as an unprivileged user and additionally
-  restricts itself with the Linux kernel's *Landlock*: it can reach only its own
-  folders (Garmin tokens, downloads) – not the Home Assistant configuration folder
-  (not even to read), not the app's secrets and not the app page. File tools
+* **The MCP server is locked in:** it runs as an unprivileged user, so it cannot read
+  the app's secrets or change the helper integration; the AppArmor profile keeps it out
+  of the rest of the Home Assistant configuration folder (not even reading). Where the
+  Linux kernel offers *Landlock*, it additionally restricts itself to its own folders
+  (Garmin tokens, downloads). Home Assistant OS currently does not offer Landlock – the
+  app log then says *Landlock is not available here*; that is expected. File tools
   (upload a course, download an activity) only work inside the download folder.
 * **Choose the write access level deliberately** (see below). `read_only` is the
   safest; `create_only` (default) never deletes or overwrites anything.
