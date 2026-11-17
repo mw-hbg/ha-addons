@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.5.4
 
 - The repository moved to its own address: `https://github.com/mw-hbg/ha-garmin-mcp`
   (one project per repository). **Existing installations:** keep the old repository
