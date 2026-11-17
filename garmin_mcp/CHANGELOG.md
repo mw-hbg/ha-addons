@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.5.5
 
 - Fixed: after reinstalling the app without restarting Home Assistant, the old helper
   integration could keep running (e.g. without the new switch) and neither the app page nor
