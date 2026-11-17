@@ -1,6 +1,6 @@
 ---
 name: Garmin Connect MCP
-version: "0.5.5"
+version: "0.5.6"
 slug: garmin_mcp
 description: >-
   MCP server for Garmin Connect – let AI assistants (Claude, ChatGPT, …)

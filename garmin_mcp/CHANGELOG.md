@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.5.6
 
 - Improved: the German documentation is now shown in Home Assistant too – the
   *Documentation* tab and the app store description contain English and German (Home
