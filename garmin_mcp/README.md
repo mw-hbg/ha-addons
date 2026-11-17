@@ -208,7 +208,7 @@ URL from it first. Troubleshooting tips: [DOCS.md](DOCS.md).
   issue when [Taxuspt/garmin_mcp](https://github.com/Taxuspt/garmin_mcp) has new
   commits. Update `UPSTREAM_REF` in the `Dockerfile` deliberately and let the tests run.
 * **Shared workflows:** tests, release, translation and upstream checks come from
-  [mw-hbg/.github](https://github.com/mw-hbg/.github); this repository only calls them.
+  [mw-hbg/workflows](https://github.com/mw-hbg/workflows); this repository only calls them.
 
 ## Credits and license
 

@@ -13,7 +13,7 @@
 - Helper integration 0.4.0 (switch, links to the new address and the issue tracker). As with
   every update of the helper integration, Home Assistant asks for one restart (repair notice).
 - Development: tests, release and checks now use the shared workflows of
-  [mw-hbg/.github](https://github.com/mw-hbg/.github); release tags are now `v1.2.3`.
+  [mw-hbg/workflows](https://github.com/mw-hbg/workflows); release tags are now `v1.2.3`.
 
 ---
 
@@ -31,7 +31,7 @@
   jedem Update der Hilfs-Integration bittet Home Assistant einmal um einen Neustart
   (Reparatur-Hinweis).
 - Entwicklung: Tests, Release und Prüfungen nutzen jetzt die gemeinsamen Workflows aus
-  [mw-hbg/.github](https://github.com/mw-hbg/.github); Release-Tags heißen jetzt `v1.2.3`.
+  [mw-hbg/workflows](https://github.com/mw-hbg/workflows); Release-Tags heißen jetzt `v1.2.3`.
 
 ## 0.5.3
 

@@ -2,7 +2,7 @@ name: Check for upstream updates
 
 # Once a week: is there a newer commit of the Garmin MCP server than the one
 # pinned in garmin_mcp/Dockerfile? If so, open (or update) an issue.
-# The steps themselves live in mw-hbg/.github (shared by all projects).
+# The steps themselves live in mw-hbg/workflows (shared by all projects).
 on:
   schedule:
     - cron: "17 6 * * 1"
@@ -14,6 +14,6 @@ permissions:
 
 jobs:
   upstream:
-    uses: mw-hbg/.github/.github/workflows/upstream-check.yml@main
+    uses: mw-hbg/workflows/.github/workflows/upstream-check.yml@main
     with:
       file: garmin_mcp/upstream.yaml

@@ -221,7 +221,7 @@ Ergebnis von **Verbindung testen** und das App-Protokoll (Reiter *Protokoll*) mi
   [Taxuspt/garmin_mcp](https://github.com/Taxuspt/garmin_mcp) neue Commits hat.
   `UPSTREAM_REF` im `Dockerfile` bewusst anheben und die Tests laufen lassen.
 * **Gemeinsame Workflows:** Tests, Release, Übersetzungs- und Upstream-Prüfung kommen aus
-  [mw-hbg/.github](https://github.com/mw-hbg/.github); dieses Repository ruft sie nur auf.
+  [mw-hbg/workflows](https://github.com/mw-hbg/workflows); dieses Repository ruft sie nur auf.
 
 ## Dank und Lizenz
 
