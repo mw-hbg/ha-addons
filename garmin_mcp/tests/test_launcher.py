@@ -229,3 +229,22 @@ def test_nginx_accepts_the_generated_configuration(tmp_path, monkeypatch):
     services.write_nginx_conf()
     result = subprocess.run(["nginx", "-t", "-e", "stderr", "-c", str(tmp_path / "nginx.conf")], capture_output=True, text=True)
     assert result.returncode == 0, result.stderr
+
+
+def test_page_status_matches_status_json(monkeypatch):
+    """The page reloads when status.json differs from what it shows – both must
+    use the same format, or it never (or always) reloads."""
+    from starlette.testclient import TestClient
+
+    services = L.Services()
+    remote = L.RemoteAccess(services)
+    remote.state = "active"
+    monkeypatch.setattr(L, "SERVICES", services, raising=False)
+    monkeypatch.setattr(L, "REMOTE", remote, raising=False)
+    monkeypatch.setattr(L, "ALLOW_ANY_UI_CLIENT", True)
+    monkeypatch.setattr(services, "mcp_state", lambda: "ready")
+    monkeypatch.setattr(L, "has_tokens", lambda: True)
+    with TestClient(L.app) as client:
+        s = client.get("/status.json").json()
+    js_join = "|".join([s["server"], s["remote"], "true" if s["logged_in"] is True else "false"])
+    assert js_join == L.page_status("ready") == "ready|active|true"

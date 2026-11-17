@@ -1475,7 +1475,7 @@ async def index(request: Request) -> Response:
         # While the server or remote access is still starting, check the status
         # every few seconds and reload only when it changed – and never while
         # the user is typing into a form (login, 2FA code).
-        + (f"<script>{STATUS_POLL_JS}</script>"
+        + (f"<script>const SHOWN={json.dumps(page_status(state))};{STATUS_POLL_JS}</script>"
            if (state == "pending" or REMOTE.state == "setting_up") and not PENDING_MFA else "")
         + "</body></html>"
     )
@@ -1540,9 +1540,14 @@ async def do_rotate(request: Request) -> Response:
     return _redirect(request)
 
 
+def page_status(server_state: str) -> str:
+    """Status as the page shows it – compared with status.json by STATUS_POLL_JS."""
+    return "|".join([server_state, REMOTE.state, "true" if has_tokens() else "false"])
+
+
 STATUS_POLL_JS = """
 (function(){
-  let first=null;
+  // SHOWN: the status this page was rendered with (same format as below)
   function busyTyping(){
     const a=document.activeElement;
     if(a&&(a.tagName==='INPUT'||a.tagName==='TEXTAREA'))return true;
@@ -1553,8 +1558,7 @@ STATUS_POLL_JS = """
       const r=await fetch('status.json',{cache:'no-store'});
       const s=await r.json();
       const now=[s.server,s.remote,s.logged_in].join('|');
-      if(first===null){first=now}
-      else if(now!==first&&!busyTyping()&&!document.querySelector('form[data-busy]')){location.reload();return}
+      if(now!==SHOWN&&!busyTyping()&&!document.querySelector('form[data-busy]')){location.reload();return}
     }catch(e){}
     setTimeout(poll,5000);
   }

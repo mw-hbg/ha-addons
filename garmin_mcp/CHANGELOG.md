@@ -1,5 +1,15 @@
 # Changelog
 
+## Unreleased
+
+- Fixed: the app page could keep showing "starting …" after logging in, although the
+  server was already running. It now updates as soon as the status changes.
+
+---
+
+- Behoben: Die App-Seite zeigte nach dem Anmelden manchmal weiter „startet …“, obwohl der
+  Server schon lief. Sie aktualisiert sich jetzt, sobald sich der Status ändert.
+
 ## 0.5.1
 
 - Improved: when the app is not logged in to Garmin (or the login expired), the AI app now
