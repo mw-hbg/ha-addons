@@ -1,5 +1,16 @@
 # Changelog
 
+## Unreleased
+
+- Improved: if Garmin no longer accepts the login, the app page shows **Log in again** right
+  away – no need to log out first. Settings and connector URL stay the same.
+
+---
+
+- Verbessert: Akzeptiert Garmin die Anmeldung nicht mehr, zeigt die App-Seite direkt **Neu
+  anmelden** – vorher abmelden ist nicht mehr nötig. Einstellungen und Connector-URL bleiben
+  gleich.
+
 ## 0.5.2
 
 - Fixed: the app page could keep showing "starting …" after logging in, although the

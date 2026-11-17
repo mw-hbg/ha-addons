@@ -1136,9 +1136,10 @@ def _finish_login(garmin: Garmin) -> str:
 def start_login(email: str, password: str) -> str:
     """Returns 'done' or 'mfa'. Raises LoginError."""
     with LOGIN_LOCK:
-        if has_tokens():
+        if has_tokens() and SERVICES.login_status() != "failed":
             # A second click while the first login was still running – don't
-            # log in again (Garmin rate-limits repeated logins).
+            # log in again (Garmin rate-limits repeated logins). A login that
+            # Garmin rejects may be replaced right away (re-login).
             return "done"
         PENDING_MFA.clear()
         _throttle_login()
@@ -1346,6 +1347,18 @@ async def index(request: Request) -> Response:
 
     # Account card
     account = read_account()
+    login_broken = has_tokens() and await anyio.to_thread.run_sync(services.login_status) == "failed"
+    login_form = (
+        f'<form method="post" action="login" onsubmit="return busy(this)">{csrf}'
+        f'<label>{t["email"]}</label><input name="email" type="email" autocomplete="username" required>'
+        f'<label>{t["password"]}</label><input name="password" type="password" autocomplete="current-password" required>'
+        f'<button type="submit" data-busy="{t["login_busy"]}">{{button}}</button>'
+        f'<p class="muted busy-note">{t["login_wait"]}</p></form>'
+    )
+    logout_form = (
+        f'<form method="post" action="logout" onsubmit="return confirm(\'{t["logout_confirm"]}\')">{csrf}'
+        f'<button type="submit" class="secondary">{t["logout"]}</button></form>'
+    )
     parts.append(f'<div class="card"><h2>{t["account"]}</h2>')
     if PENDING_MFA:
         parts.append(
@@ -1354,22 +1367,23 @@ async def index(request: Request) -> Response:
             f'<div class="row"><button type="submit" data-busy="{t["login_busy"]}">{t["confirm"]}</button>'
             f'<button type="submit" class="secondary" formaction="cancel" formnovalidate>{t["cancel"]}</button></div></form>'
         )
+    elif login_broken:
+        name = html.escape(account.get("name") or "–")
+        parts.append(
+            f'<p>{t["last_connected_as"]} <b>{name}</b></p>'
+            f'<p class="err">{t["relogin_needed"]}</p>'
+            + login_form.replace("{button}", t["relogin"])
+            + logout_form
+        )
     elif has_tokens():
         name = html.escape(account.get("name") or "–")
         parts.append(
             f'<p>{t["connected_as"]} <b>{name}</b></p>'
             + (f'<p class="muted">{t["upload_hint"]}</p>' if services.options.get("write_access") != "read_only" else "")
-            + f'<form method="post" action="logout" onsubmit="return confirm(\'{t["logout_confirm"]}\')">{csrf}'
-            f'<button type="submit" class="secondary">{t["logout"]}</button></form>'
+            + logout_form
         )
     else:
-        parts.append(
-            f'<p class="muted">{t["not_connected"]}</p><form method="post" action="login" onsubmit="return busy(this)">{csrf}'
-            f'<label>{t["email"]}</label><input name="email" type="email" autocomplete="username" required>'
-            f'<label>{t["password"]}</label><input name="password" type="password" autocomplete="current-password" required>'
-            f'<button type="submit" data-busy="{t["login_busy"]}">{t["login"]}</button>'
-            f'<p class="muted busy-note">{t["login_wait"]}</p></form>'
-        )
+        parts.append(f'<p class="muted">{t["not_connected"]}</p>' + login_form.replace("{button}", t["login"]))
     parts.append("</div>")
 
     # Server card

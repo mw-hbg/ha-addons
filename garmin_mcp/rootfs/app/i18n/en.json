@@ -119,7 +119,10 @@
     "restart_busy": "Restarting …",
     "test_warn": "Works, with a note.",
     "detail_blocked_proxy": "Cloudflare answered with HTTP {value} – its bot protection or a firewall rule blocks this test before it reaches Home Assistant. If your AI app works, ignore this. Otherwise allow the path /api/webhook/garmin_mcp_* in Cloudflare (Security → WAF / Bots).",
-    "detail_http_forbidden": "HTTP {value} – blocked before reaching the app (firewall, reverse proxy or IP allow list). If your AI app works, you can ignore this."
+    "detail_http_forbidden": "HTTP {value} – blocked before reaching the app (firewall, reverse proxy or IP allow list). If your AI app works, you can ignore this.",
+    "last_connected_as": "Last connected as",
+    "relogin": "Log in again",
+    "relogin_needed": "Garmin no longer accepts this login (e.g. after a password change). Log in again – your settings and the connector URL stay the same."
   },
   "categories": {
     "activity_management": "Activities",

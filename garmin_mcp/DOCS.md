@@ -262,7 +262,7 @@ changes an existing activity and therefore needs `enable_tools` with `create_onl
 
 | Problem | Solution |
 |---|---|
-| Status *Garmin login failed* | Tokens expired or were revoked. Log out on the app page and log in again. |
+| Status *Garmin login failed* | Tokens expired or were revoked (e.g. Garmin password changed). Click **Log in again** on the app page – settings and connector URL stay the same. |
 | *Too many requests* during login | Garmin rate-limits logins. Wait a few minutes. |
 | Writing workouts fails with HTTP 412 | Upload consent missing: Garmin Connect → Settings → Privacy settings → Data → *Upload device data*. |
 | Asked for a code at login | Two-factor authentication is enabled – enter the code Garmin sent you. |

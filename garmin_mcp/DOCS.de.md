@@ -263,7 +263,7 @@ eine vorhandene Aktivität und braucht bei `create_only` deshalb `enable_tools`.
 
 | Problem | Lösung |
 |---|---|
-| Status *Garmin-Anmeldung fehlgeschlagen* | Tokens abgelaufen oder widerrufen. Auf der App-Seite abmelden und neu anmelden. |
+| Status *Garmin-Anmeldung fehlgeschlagen* | Tokens abgelaufen oder widerrufen (z. B. Garmin-Passwort geändert). Auf der App-Seite **Neu anmelden** – Einstellungen und Connector-URL bleiben gleich. |
 | *Zu viele Anfragen* bei der Anmeldung | Garmin begrenzt Anmeldungen. Ein paar Minuten warten. |
 | Workouts schreiben schlägt mit HTTP 412 fehl | Zustimmung zum Upload fehlt: Garmin Connect → Einstellungen → Datenschutzeinstellungen → Daten → *Gerätedaten hochladen*. |
 | Bei der Anmeldung wird ein Code verlangt | Zwei-Faktor-Anmeldung ist aktiv – den Code eingeben, den Garmin geschickt hat. |

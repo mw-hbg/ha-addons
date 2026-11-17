@@ -248,3 +248,51 @@ def test_page_status_matches_status_json(monkeypatch):
         s = client.get("/status.json").json()
     js_join = "|".join([s["server"], s["remote"], "true" if s["logged_in"] is True else "false"])
     assert js_join == L.page_status("ready") == "ready|active|true"
+
+
+# --- login rejected by Garmin: log in again without logging out first ----------------
+
+def _page_setup(monkeypatch, login_status):
+    services = L.Services()
+    remote = L.RemoteAccess(services)
+    remote.state = "active"
+    monkeypatch.setattr(L, "SERVICES", services, raising=False)
+    monkeypatch.setattr(L, "REMOTE", remote, raising=False)
+    monkeypatch.setattr(L, "ALLOW_ANY_UI_CLIENT", True)
+    monkeypatch.setattr(L, "has_tokens", lambda: True)
+    monkeypatch.setattr(services, "mcp_state", lambda: "ready")
+    monkeypatch.setattr(services, "login_status", lambda: login_status)
+    return services
+
+
+def test_page_offers_relogin_when_garmin_rejects_the_login(monkeypatch):
+    from starlette.testclient import TestClient
+
+    _page_setup(monkeypatch, "failed")
+    with TestClient(L.app) as client:
+        page = client.get("/", headers={"Accept-Language": "de"}).text
+    assert "Neu anmelden" in page and "Zuletzt verbunden als" in page and 'name="password"' in page
+
+    _page_setup(monkeypatch, "ok")
+    with TestClient(L.app) as client:
+        page = client.get("/", headers={"Accept-Language": "de"}).text
+    assert "Verbunden als" in page and 'name="password"' not in page
+
+
+def test_relogin_is_allowed_only_when_the_login_is_broken(monkeypatch):
+    tried = []
+
+    class FakeGarmin:
+        def __init__(self, **kwargs):
+            tried.append(kwargs["email"])
+            raise RuntimeError("network")
+
+    monkeypatch.setattr(L, "Garmin", FakeGarmin)
+    L.LOGIN_ATTEMPTS.clear()
+    _page_setup(monkeypatch, "ok")
+    assert L.start_login("a@b.c", "pw") == "done" and tried == []  # double click guard
+    _page_setup(monkeypatch, "failed")
+    with pytest.raises(L.LoginError):
+        L.start_login("a@b.c", "pw")
+    assert tried == ["a@b.c"]
+    L.LOGIN_ATTEMPTS.clear()
