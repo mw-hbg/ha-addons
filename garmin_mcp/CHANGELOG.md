@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.5.2
 
 - Fixed: the app page could keep showing "starting …" after logging in, although the
   server was already running. It now updates as soon as the status changes.
