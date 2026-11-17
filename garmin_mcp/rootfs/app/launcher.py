@@ -459,7 +459,9 @@ http {{
         # Server not running (not logged in, starting, login failed): a small
         # stand-in in the app answers proper MCP messages that tell the AI why.
         location @unavailable {{
-            proxy_pass http://127.0.0.1:{ui_port}/mcp-unavailable;
+            # (a named location may not have a path in proxy_pass)
+            rewrite ^ /mcp-unavailable break;
+            proxy_pass http://127.0.0.1:{ui_port};
             proxy_set_header X-Report-Key "{secret}";
             proxy_set_header Host 127.0.0.1;
             proxy_set_header Origin "";

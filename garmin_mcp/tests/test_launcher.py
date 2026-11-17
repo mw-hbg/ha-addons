@@ -213,3 +213,19 @@ def test_stand_in_answers_mcp_messages(monkeypatch):
         call = client.post("/mcp-unavailable", headers=key, json={"jsonrpc": "2.0", "id": 3, "method": "tools/call"}).json()
         assert "no longer valid" in call["result"]["content"][0]["text"]
         assert client.get("/mcp-unavailable", headers=key).status_code == 405
+
+
+def test_nginx_accepts_the_generated_configuration(tmp_path, monkeypatch):
+    """nginx -t on the real configuration (skipped where nginx is not installed)."""
+    import shutil
+    import subprocess
+
+    if not shutil.which("nginx"):
+        pytest.skip("nginx not installed")
+    monkeypatch.setattr(L, "NGINX_CONF", tmp_path / "nginx.conf")
+    monkeypatch.setattr(L, "NGINX_PROXY_CONF", tmp_path / "proxy.conf")
+    monkeypatch.setattr(L, "NGINX_TEMPLATE", L.NGINX_TEMPLATE.replace("/tmp/garmin-mcp-proxy.conf", str(tmp_path / "proxy.conf")))
+    services = L.Services()
+    services.write_nginx_conf()
+    result = subprocess.run(["nginx", "-t", "-e", "stderr", "-c", str(tmp_path / "nginx.conf")], capture_output=True, text=True)
+    assert result.returncode == 0, result.stderr
