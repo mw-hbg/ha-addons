@@ -1,5 +1,29 @@
 # Changelog
 
+## Unreleased
+
+- The repository moved to its own address: `https://github.com/mw-hbg/ha-garmin-mcp`
+  (one project per repository). **Existing installations:** keep the old repository
+  address in Home Assistant – it forwards and updates keep arriving. Adding the new address
+  in addition would install a second, separate app (new Garmin login and connector URL).
+- Helper integration 0.3.1: links to the new address and to the issue tracker. As with every
+  update of the helper integration, Home Assistant asks for one restart (repair notice).
+- Development: tests, release and checks now use the shared workflows of
+  [mw-hbg/.github](https://github.com/mw-hbg/.github); release tags are now `v1.2.3`.
+
+---
+
+- Das Repository hat eine eigene Adresse: `https://github.com/mw-hbg/ha-garmin-mcp`
+  (ein Projekt pro Repository). **Bestehende Installationen:** die alte Repository-Adresse in
+  Home Assistant stehen lassen – sie wird weitergeleitet, Updates kommen weiter an. Die neue
+  Adresse zusätzlich einzutragen, würde eine zweite, getrennte App installieren (neue
+  Garmin-Anmeldung und Connector-URL).
+- Hilfs-Integration 0.3.1: Links auf die neue Adresse und den Issue-Tracker. Wie bei jedem
+  Update der Hilfs-Integration bittet Home Assistant einmal um einen Neustart
+  (Reparatur-Hinweis).
+- Entwicklung: Tests, Release und Prüfungen nutzen jetzt die gemeinsamen Workflows aus
+  [mw-hbg/.github](https://github.com/mw-hbg/.github); Release-Tags heißen jetzt `v1.2.3`.
+
 ## 0.5.3
 
 - Improved: if Garmin no longer accepts the login, the app page shows **Log in again** right

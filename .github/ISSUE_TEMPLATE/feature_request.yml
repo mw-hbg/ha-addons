@@ -1,17 +1,10 @@
 name: Feature request / Wunsch
-description: Suggest an improvement.
+description: Suggest an improvement. / Eine Verbesserung vorschlagen.
 labels: [enhancement]
 body:
-  - type: input
-    id: app
-    attributes:
-      label: Which app? / Welche App?
-      placeholder: "Garmin Connect MCP"
-    validations:
-      required: true
   - type: textarea
     id: idea
     attributes:
-      label: What would you like and why?
+      label: What would you like and why? / Was wünschst du dir und warum?
     validations:
       required: true

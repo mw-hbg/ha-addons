@@ -1,6 +1,6 @@
 name: "Garmin Connect MCP: bug report / Fehlerbericht"
 description: Something in the Garmin Connect MCP app does not work as expected.
-labels: [bug, garmin_mcp]
+labels: [bug]
 body:
   - type: markdown
     attributes:

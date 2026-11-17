@@ -958,7 +958,7 @@ def _mcp_request(url: str, payload: dict, host_header: str | None = None, timeou
         # A real client name: Cloudflare and similar services block requests
         # that look like scripts ("Python-urllib").
         "User-Agent": f"Mozilla/5.0 (compatible; GarminConnectMCP/{os.environ.get('APP_VERSION', 'dev')}; "
-        "+https://github.com/mw-hbg/ha-apps)",
+        "+https://github.com/mw-hbg/ha-garmin-mcp)",
     }
     if host_header:
         headers["Host"] = host_header
@@ -1244,7 +1244,7 @@ def _config_url() -> str:
     return f"/config/app/{app_slug()}/config"
 
 
-DOCS_BASE = "https://github.com/mw-hbg/ha-apps/blob/main/garmin_mcp"
+DOCS_BASE = "https://github.com/mw-hbg/ha-garmin-mcp/blob/main/garmin_mcp"
 LANG_COOKIE = "garmin_mcp_lang"
 
 

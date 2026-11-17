@@ -5,12 +5,12 @@ updates:
     directory: /
     schedule:
       interval: monthly
-  # Base images of all apps (every top-level folder with a Dockerfile)
+  # Base image of the app
   - package-ecosystem: docker
-    directories: ["/*"]
+    directory: /garmin_mcp
     schedule:
       interval: monthly
     ignore:
-      # Python apps stay on their Python minor version until upgraded deliberately
+      # Stays on its Python minor version until upgraded deliberately
       - dependency-name: python
         update-types: ["version-update:semver-minor", "version-update:semver-major"]

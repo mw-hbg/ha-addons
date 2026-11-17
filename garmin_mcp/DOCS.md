@@ -1,6 +1,6 @@
 # Garmin Connect MCP
 
-[🇩🇪 Deutsche Anleitung](https://github.com/mw-hbg/ha-apps/blob/main/garmin_mcp/DOCS.de.md)
+[🇩🇪 Deutsche Anleitung](https://github.com/mw-hbg/ha-garmin-mcp/blob/main/garmin_mcp/DOCS.de.md)
 
 This app runs an [MCP](https://modelcontextprotocol.io) server for your
 Garmin Connect account inside Home Assistant. AI assistants that support remote
@@ -50,7 +50,8 @@ marked *experimental* until version 1.0.
 ### 1. Install and start
 
 *Settings → Apps → Install app → ⋮ → Repositories*, add
-`https://github.com/mw-hbg/ha-apps`. Then install **Garmin Connect MCP**, start it and
+`https://github.com/mw-hbg/ha-garmin-mcp` (formerly `mw-hbg/ha-apps` – if you added an old
+address, keep it; it forwards). Then install **Garmin Connect MCP**, start it and
 open **Garmin MCP** in the sidebar (or **Open Web UI** on the app page).
 
 ### 2. Log in to Garmin Connect
@@ -200,7 +201,7 @@ Home Assistant language:
 The app page uses your browser language, otherwise the Home Assistant language,
 otherwise English. You can switch the language at the bottom of the page; your browser
 remembers the choice. English and German are available – adding another language is
-easy, see [TRANSLATING.md](https://github.com/mw-hbg/ha-apps/blob/main/garmin_mcp/TRANSLATING.md).
+easy, see [TRANSLATING.md](https://github.com/mw-hbg/ha-garmin-mcp/blob/main/garmin_mcp/TRANSLATING.md).
 
 ## Choosing tools
 

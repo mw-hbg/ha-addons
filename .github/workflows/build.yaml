@@ -1,13 +1,8 @@
 name: Test
 
-# Runs for every pull request and every push to main – for every app in this
-# repository (every top-level folder with a config.yaml). Nothing is published
-# here; releases are made with the "Release" workflow (Actions → Release).
-#
-# Per app, if present:
-#   <app>/tests/setup.sh       installs what the unit tests need
-#   <app>/tests/               unit tests (pytest; smoke_test.sh is not one)
-#   <app>/tests/smoke_test.sh  runs against every natively built image
+# Every pull request and every push to main. Nothing is published here;
+# releases are made with the "Release" workflow (Actions → Release).
+# The steps themselves live in mw-hbg/.github (shared by all projects).
 on:
   pull_request:
   push:
@@ -18,87 +13,15 @@ permissions:
   contents: read
 
 jobs:
-  apps:
-    runs-on: ubuntu-latest
-    outputs:
-      apps: ${{ steps.find.outputs.apps }}
-      builds: ${{ steps.find.outputs.builds }}
-    steps:
-      - uses: actions/checkout@v7
-      - name: Find apps and check the repository
-        id: find
-        run: |
-          pip install --quiet pyyaml
-          python3 .github/scripts/apps.py check
-          python3 .github/scripts/apps.py matrix >> "$GITHUB_OUTPUT"
+  app:
+    uses: mw-hbg/.github/.github/workflows/ha-app-test.yml@main
+    with:
+      app: garmin_mcp
 
-  lint:
-    needs: apps
-    runs-on: ubuntu-latest
-    strategy:
-      fail-fast: false
-      matrix:
-        app: ${{ fromJSON(needs.apps.outputs.apps) }}
-    steps:
-      - uses: actions/checkout@v7
-      - name: Lint ${{ matrix.app }}
-        uses: frenck/action-addon-linter@v2
-        with:
-          path: ./${{ matrix.app }}
-
-  unit-tests:
-    needs: apps
-    runs-on: ubuntu-latest
-    strategy:
-      fail-fast: false
-      matrix:
-        app: ${{ fromJSON(needs.apps.outputs.apps) }}
-    steps:
-      - uses: actions/checkout@v7
-      - uses: actions/setup-python@v7
-        with:
-          python-version: "3.12"
-      - name: Install test dependencies of ${{ matrix.app }}
-        run: |
-          if [ -f "${{ matrix.app }}/tests/setup.sh" ]; then
-            bash "${{ matrix.app }}/tests/setup.sh"
-          else
-            pip install pytest
-          fi
-      - name: Run unit tests of ${{ matrix.app }}
-        run: |
-          if ls "${{ matrix.app }}"/tests/test_*.py >/dev/null 2>&1; then
-            pytest -q "${{ matrix.app }}/tests"
-          else
-            echo "::warning::${{ matrix.app }} has no unit tests"
-          fi
-
-  build:
-    needs: [apps, lint, unit-tests]
-    # amd64 on x64, aarch64 on GitHub's arm64 runners – no emulation
-    runs-on: ${{ matrix.runner }}
-    strategy:
-      fail-fast: false
-      matrix:
-        include: ${{ fromJSON(needs.apps.outputs.builds) }}
-    steps:
-      - uses: actions/checkout@v7
-      - uses: docker/setup-qemu-action@v4
-        if: ${{ !matrix.native }}
-      - uses: docker/setup-buildx-action@v4
-      - name: Build ${{ matrix.app }} (${{ matrix.arch }})
-        uses: docker/build-push-action@v7
-        with:
-          context: ./${{ matrix.app }}
-          platforms: ${{ matrix.platform }}
-          push: false
-          load: ${{ matrix.native }}
-          tags: ${{ matrix.app }}-test:${{ matrix.arch }}
-          build-args: |
-            BUILD_VERSION=test
-            BUILD_ARCH=${{ matrix.arch }}
-          cache-from: type=gha,scope=${{ matrix.app }}-${{ matrix.arch }}
-          cache-to: type=gha,mode=max,scope=${{ matrix.app }}-${{ matrix.arch }}
-      - name: Smoke test the image
-        if: matrix.native && hashFiles(format('{0}/tests/smoke_test.sh', matrix.app)) != ''
-        run: bash "${{ matrix.app }}/tests/smoke_test.sh" "${{ matrix.app }}-test:${{ matrix.arch }}"
+  translations:
+    uses: mw-hbg/.github/.github/workflows/translations-check.yml@main
+    with:
+      groups: |
+        garmin_mcp/rootfs/app/i18n/*.json
+        garmin_mcp/translations/*.yaml
+        garmin_mcp/rootfs/app/integration/garmin_mcp_webhook/strings.json garmin_mcp/rootfs/app/integration/garmin_mcp_webhook/translations/*.json

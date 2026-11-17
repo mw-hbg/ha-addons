@@ -1,74 +1,78 @@
-# Home Assistant apps by mw-hbg
+# Garmin Connect MCP – Home Assistant app
 
-[🇩🇪 Deutsch](#deutsch)
+[English](#english) · [Deutsch](#deutsch)
 
-## Apps
+[![Add repository to Home Assistant](https://my.home-assistant.io/badges/supervisor_add_addon_repository.svg)](https://my.home-assistant.io/redirect/supervisor_add_addon_repository/?repository_url=https%3A%2F%2Fgithub.com%2Fmw-hbg%2Fha-garmin-mcp)
+[![Test](https://github.com/mw-hbg/ha-garmin-mcp/actions/workflows/build.yaml/badge.svg)](https://github.com/mw-hbg/ha-garmin-mcp/actions/workflows/build.yaml)
+[![Release](https://img.shields.io/github/v/release/mw-hbg/ha-garmin-mcp?label=release)](https://github.com/mw-hbg/ha-garmin-mcp/releases)
+![Stage: experimental](https://img.shields.io/badge/stage-experimental-orange)
 
-| App | Description |
-|---|---|
-| [Garmin Connect MCP](garmin_mcp/README.md) | Let AI assistants (Claude, ChatGPT, …) read your Garmin Connect training and health data and plan workouts on your watch. |
+## English
 
-## Installation
+Let AI assistants such as **Claude** or **ChatGPT** read your Garmin Connect
+training and health data and create workouts that sync to your watch. The app
+runs an [MCP](https://modelcontextprotocol.io) server inside your Home
+Assistant – no additional service in between, reachable through the address you
+already use for Home Assistant.
 
-1. *Settings → Apps → Install app → ⋮ → Repositories*, add
-   `https://github.com/mw-hbg/ha-apps`
-2. The apps appear under *Install app*. New apps in this repository show up
-   automatically.
+* Login with two-factor authentication in the Home Assistant UI; your password is never stored.
+* You decide what the AI may do: read only, create without deleting, or full access.
+* Security first: no access to the Home Assistant API, AppArmor profile, the
+  internet-facing server runs unprivileged and sandboxed.
+* English and German; more languages can be added without code.
 
-Requires Home Assistant OS or Supervised. Each app has its own
-documentation (also shown in the app's *Documentation* tab).
+> **Unofficial** – not affiliated with Garmin. **Experimental** until version 1.0.
 
-## Adding an app
+**Installation:** click the button above or add
+`https://github.com/mw-hbg/ha-garmin-mcp` under *Settings → Apps → Install app →
+⋮ → Repositories*, then install **Garmin Connect MCP**. Step by step:
+[app README](garmin_mcp/README.md) · full documentation: [DOCS.md](garmin_mcp/DOCS.md)
+(also in the app's *Documentation* tab).
 
-Every top-level folder with a `config.yaml` is an app. Tests, image builds and
-releases pick it up automatically. Checklist for a new app `my_app`:
+> **Moved:** this repository used to be `mw-hbg/ha-apps` (before that
+> `mw-hbg/ha-addons`). If you added an old address, **keep it** – it forwards and
+> updates keep arriving. Adding the new address in addition would make Home Assistant
+> treat it as a different app (new Garmin login and connector URL).
 
-1. Folder `my_app/` with `config.yaml` (`slug: my_app`,
-   `image: ghcr.io/mw-hbg/{arch}-app-my-app`, `version: "0.0.0"`), `Dockerfile`,
-   `README.md`, `README.de.md`, `DOCS.md`, `CHANGELOG.md` (with a `## Unreleased`
-   section, English then German), `icon.png`, `logo.png`, `translations/en.yaml` and
-   `translations/de.yaml`.
-2. Optional: `my_app/tests/` (unit tests), `my_app/tests/setup.sh` (installs what they
-   need), `my_app/tests/smoke_test.sh` (gets the built image as argument),
-   `my_app/upstream.yaml` (weekly check for upstream updates).
-3. Add `my_app` to the `app` options in `.github/workflows/release.yaml`, add a bug
-   report template `.github/ISSUE_TEMPLATE/my_app_bug.yml` and list the app in the
-   table above (English and German).
-4. Push – the *Test* workflow checks steps 1 and 3 and fails with a clear message if
-   something is missing.
-5. Release with *Actions → Release*: choose `my_app`, enter the version. After the
-   first release, check once that the new packages are public (GitHub → *Packages*);
-   if not: package → *Package settings* → *Change visibility*. Otherwise Home Assistant
-   cannot download them.
-
-## License
-
-[MIT](LICENSE). Provided free of charge and without warranty.
-See [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md) for bundled software.
-
----
+**Help:** [issues](https://github.com/mw-hbg/ha-garmin-mcp/issues) · security
+problems please privately, see [SECURITY.md](SECURITY.md) ·
+[changelog](garmin_mcp/CHANGELOG.md) · more projects:
+[github.com/mw-hbg](https://github.com/mw-hbg)
 
 ## Deutsch
 
-Sammlung von Home-Assistant-Apps.
+KI-Assistenten wie **Claude** oder **ChatGPT** lesen deine Trainings- und
+Gesundheitsdaten aus Garmin Connect und legen Workouts an, die auf deine Uhr
+synchronisiert werden. Die App betreibt einen
+[MCP](https://modelcontextprotocol.io)-Server in deinem Home Assistant – ohne
+Dienst dazwischen, erreichbar über die Adresse, die du für Home Assistant schon
+nutzt.
 
-**Installation:** *Einstellungen → Apps → App installieren → ⋮ → Repositories*,
-dort `https://github.com/mw-hbg/ha-apps` eintragen. Neue Apps in diesem
-Repository erscheinen danach automatisch unter *App installieren*.
+* Anmeldung inkl. Zwei-Faktor-Authentifizierung in Home Assistant; dein Passwort wird nie gespeichert.
+* Du bestimmst, was die KI darf: nur lesen, anlegen ohne löschen oder alles.
+* Sicherheit zuerst: kein Zugriff auf die Home-Assistant-API, AppArmor-Profil, der
+  aus dem Internet erreichbare Server läuft eingeschränkt und abgeschottet.
+* Deutsch und Englisch; weitere Sprachen ohne Code ergänzbar.
 
-| App | Beschreibung |
-|---|---|
-| [Garmin Connect MCP](garmin_mcp/README.de.md) | KI-Assistenten (Claude, ChatGPT, …) lesen deine Trainings- und Gesundheitsdaten aus Garmin Connect und planen Workouts auf deiner Uhr. |
+> **Inoffiziell** – keine Verbindung zu Garmin. **Experimentell** bis Version 1.0.
 
-Benötigt Home Assistant OS oder Supervised. Jede App hat ihre eigene Anleitung (auch im
-Reiter *Dokumentation* der App).
+**Installation:** Knopf oben anklicken oder unter *Einstellungen → Apps → App
+installieren → ⋮ → Repositories* `https://github.com/mw-hbg/ha-garmin-mcp`
+eintragen, dann **Garmin Connect MCP** installieren. Schritt für Schritt:
+[App-README](garmin_mcp/README.de.md) · ausführliche Anleitung:
+[DOCS.de.md](garmin_mcp/DOCS.de.md) (auch im Reiter *Dokumentation* der App).
 
-**Neue App hinzufügen:** Jeder Ordner auf oberster Ebene mit einer `config.yaml` ist
-eine App; Tests, Images und Releases erkennen ihn automatisch. Die Checkliste steht oben
-unter *Adding an app*: Ordner mit den Pflichtdateien anlegen, die App im Release-Ablauf
-(`.github/workflows/release.yaml`) und in der Tabelle eintragen, eine Vorlage für
-Fehlerberichte anlegen und nach dem ersten Release prüfen, ob die neuen Pakete öffentlich
-sind. Der Test-Ablauf meldet klar, wenn etwas fehlt.
+> **Umgezogen:** Dieses Repository hieß früher `mw-hbg/ha-apps` (davor
+> `mw-hbg/ha-addons`). Eine alte Adresse **einfach stehen lassen** – sie wird
+> weitergeleitet, Updates kommen weiter an. Die neue Adresse zusätzlich einzutragen,
+> würde Home Assistant als andere App sehen (neue Garmin-Anmeldung und Connector-URL).
 
-**Lizenz:** [MIT](LICENSE). Kostenlos und ohne Gewähr. Enthaltene Software:
-[THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).
+**Hilfe:** [Issues](https://github.com/mw-hbg/ha-garmin-mcp/issues) ·
+Sicherheitsprobleme bitte vertraulich, siehe [SECURITY.md](SECURITY.md) ·
+[Changelog](garmin_mcp/CHANGELOG.md) · weitere Projekte:
+[github.com/mw-hbg](https://github.com/mw-hbg)
+
+## License / Lizenz
+
+[MIT](LICENSE). Free of charge and without warranty / kostenlos und ohne Gewähr.
+Bundled software / enthaltene Software: [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).

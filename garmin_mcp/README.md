@@ -45,8 +45,10 @@ without any additional service in between.
 
 ## Installation
 
+[![Add repository to Home Assistant](https://my.home-assistant.io/badges/supervisor_add_addon_repository.svg)](https://my.home-assistant.io/redirect/supervisor_add_addon_repository/?repository_url=https%3A%2F%2Fgithub.com%2Fmw-hbg%2Fha-garmin-mcp)
+
 1. *Settings → Apps → Install app → ⋮ → Repositories*, add
-   `https://github.com/mw-hbg/ha-apps`.
+   `https://github.com/mw-hbg/ha-garmin-mcp`.
 2. Install **Garmin Connect MCP** and start it.
 3. **Restart Home Assistant once** (*Settings → System → Restart*). There is **no
    notification** for this first restart – only the app page shows the hint. The app
@@ -56,6 +58,12 @@ without any additional service in between.
    should show **Active** about a minute after the restart.
 5. Click **Test connection**, then add the connector URL shown on the app page to your
    AI assistant.
+
+> **Moved:** this repository used to be `mw-hbg/ha-apps` (and before that
+> `mw-hbg/ha-addons`). If you added one of the old addresses, **keep it** – GitHub
+> forwards it and updates keep arriving. Do not add the new address in addition: Home
+> Assistant would treat it as a different app, and you would have to log in to Garmin
+> again and replace the connector URL.
 
 Requirement: Home Assistant is already reachable from the internet over HTTPS (Nabu
 Casa, Cloudflare Tunnel, reverse proxy …). No extra hostname or tunnel is needed.
@@ -174,7 +182,7 @@ The connector URL changes when you switch – update it in your AI app.
 
 ## Help and feedback
 
-Problems or ideas: [open an issue](https://github.com/mw-hbg/ha-apps/issues). Please add
+Problems or ideas: [open an issue](https://github.com/mw-hbg/ha-garmin-mcp/issues). Please add
 the result of **Test connection** and the app log (*Log* tab) – but remove the connector
 URL from it first. Troubleshooting tips: [DOCS.md](DOCS.md).
 
@@ -191,13 +199,14 @@ URL from it first. Troubleshooting tips: [DOCS.md](DOCS.md).
   then the same in German below a `---` line. Never change `version` in `config.yaml`
   by hand.
 * **Translations:** see [TRANSLATING.md](TRANSLATING.md).
-* **Releases:** *Actions → Release → Run workflow*, choose `garmin_mcp` and enter the
-  new version. The workflow builds and pushes the images first, then sets the version,
-  finishes the changelog, tags (`garmin_mcp-v1.2.3`) and publishes the release – so
+* **Releases:** *Actions → Release → Run workflow* and enter the new version. The workflow builds and pushes the images first, then sets the version,
+  finishes the changelog, tags (`v1.2.3`) and publishes the release – so
   Home Assistant only offers an update once its images exist.
 * **Garmin server updates:** a weekly check (configured in `upstream.yaml`) opens an
   issue when [Taxuspt/garmin_mcp](https://github.com/Taxuspt/garmin_mcp) has new
   commits. Update `UPSTREAM_REF` in the `Dockerfile` deliberately and let the tests run.
+* **Shared workflows:** tests, release, translation and upstream checks come from
+  [mw-hbg/.github](https://github.com/mw-hbg/.github); this repository only calls them.
 
 ## Credits and license
 

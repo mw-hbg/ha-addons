@@ -12,7 +12,7 @@ Helpful details: app and Home Assistant version, remote access mode
 
 ## Scope
 
-In scope: the apps in this repository (web UI, secret-path protection,
+In scope: the Garmin Connect MCP app (web UI, secret-path protection,
 helper integration, handling of Garmin tokens).
 
 Out of scope: vulnerabilities in the upstream projects

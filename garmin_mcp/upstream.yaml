@@ -1,4 +1,4 @@
-# Weekly check (.github/workflows/upstream-check.yaml): is there a newer
+# Weekly check (.github/workflows/upstream-check.yaml, shared steps in mw-hbg/.github): is there a newer
 # commit of the upstream project than the one this app is pinned to?
 name: Garmin MCP server
 repo: Taxuspt/garmin_mcp

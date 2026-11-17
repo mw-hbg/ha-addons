@@ -1,9 +1,8 @@
 name: Check for upstream updates
 
-# Once a week, for every app with an upstream.yaml: is there a newer commit of
-# the upstream project than the one the app is pinned to? If so, open (or
-# update) an issue. Updating stays a deliberate step: bump the pinned commit,
-# let the tests run, add a changelog entry, then release.
+# Once a week: is there a newer commit of the Garmin MCP server than the one
+# pinned in garmin_mcp/Dockerfile? If so, open (or update) an issue.
+# The steps themselves live in mw-hbg/.github (shared by all projects).
 on:
   schedule:
     - cron: "17 6 * * 1"
@@ -14,40 +13,7 @@ permissions:
   issues: write
 
 jobs:
-  check:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v7
-      - name: Compare pinned and latest versions
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: |
-          pip install --quiet pyyaml
-          for file in */upstream.yaml; do
-            [ -f "$file" ] || continue
-            app=$(dirname "$file")
-            eval "$(python3 - "$file" <<'PY'
-          import re, shlex, sys, yaml
-          cfg = yaml.safe_load(open(sys.argv[1]))
-          app = sys.argv[1].split("/")[0]
-          text = open(f"{app}/{cfg['file']}").read()
-          pinned = re.search(cfg["pattern"], text, re.M).group(1)
-          for key, value in {"NAME": cfg["name"], "REPO": cfg["repo"], "BRANCH": cfg.get("branch", "main"),
-                             "PIN_FILE": f"{app}/{cfg['file']}", "PINNED": pinned}.items():
-              print(f"{key}={shlex.quote(str(value))}")
-          PY
-            )"
-            latest=$(gh api "repos/$REPO/commits/$BRANCH" --jq .sha)
-            echo "$app: pinned=$PINNED latest=$latest"
-            [ "$PINNED" = "$latest" ] && continue
-            ahead=$(gh api "repos/$REPO/compare/${PINNED}...${latest}" --jq .ahead_by)
-            title="$app: $NAME update available"
-            body=$(printf '**%s** has **%s** new commit(s) since the version pinned in `%s`.\n\n- pinned: `%s`\n- latest: `%s`\n- changes: https://github.com/%s/compare/%s...%s\n\nTo update: set the pinned commit in `%s` to the latest one, check that the tests pass, add a changelog entry and run the Release workflow for `%s`.' \
-              "$NAME" "$ahead" "$PIN_FILE" "$PINNED" "$latest" "$REPO" "$PINNED" "$latest" "$PIN_FILE" "$app")
-            existing=$(gh issue list --state open --search "\"$title\" in:title" --json number --jq '.[0].number')
-            if [ -n "$existing" ]; then
-              gh issue edit "$existing" --body "$body"
-            else
-              gh issue create --title "$title" --body "$body"
-            fi
-          done
+  upstream:
+    uses: mw-hbg/.github/.github/workflows/upstream-check.yml@main
+    with:
+      file: garmin_mcp/upstream.yaml

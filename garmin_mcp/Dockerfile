@@ -39,7 +39,7 @@ LABEL \
     io.hass.description="MCP server for Garmin Connect" \
     io.hass.version="${BUILD_VERSION}" \
     io.hass.arch="${BUILD_ARCH}" \
-    org.opencontainers.image.source="https://github.com/mw-hbg/ha-apps" \
+    org.opencontainers.image.source="https://github.com/mw-hbg/ha-garmin-mcp" \
     org.opencontainers.image.licenses="MIT"
 
 # Health check: the Supervisor restarts the app when the web UI stops answering
