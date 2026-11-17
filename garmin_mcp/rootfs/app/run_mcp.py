@@ -23,6 +23,15 @@ import mcp.server.fastmcp as fastmcp_module
 import garmin_mcp
 from garminconnect import GarminConnectAuthenticationError
 
+def _original(owner, name):
+    """The unpatched attribute – also when this module is loaded twice (tests),
+    so a patch never wraps an earlier patch of itself."""
+    key = f"_app_original_{name}"
+    if not hasattr(owner, key):
+        setattr(owner, key, getattr(owner, name))
+    return getattr(owner, key)
+
+
 RELOGIN_HINT = (
     "The Garmin Connect login of the Home Assistant app 'Garmin Connect MCP' is no "
     "longer valid. Ask the user to open the app page in Home Assistant (sidebar: "
@@ -35,13 +44,56 @@ prefix, _old_hint = messages[GarminConnectAuthenticationError]
 messages[GarminConnectAuthenticationError] = (prefix, RELOGIN_HINT)
 garmin_mcp._GarminProxy._MESSAGES = messages
 
+# The app shows an invalid login in Home Assistant (repair notice). It learns
+# about it through this marker file in the server's home folder: written when
+# Garmin rejects the login during a tool call, removed when a call succeeds.
+AUTH_FAILED_MARKER = os.path.join(os.environ.get("HOME", "/data/mcp_home"), "auth_failed")
+
+
+def mark_login(valid: bool) -> None:
+    try:
+        if valid:
+            if os.path.exists(AUTH_FAILED_MARKER):
+                os.remove(AUTH_FAILED_MARKER)
+        else:
+            with open(AUTH_FAILED_MARKER, "w") as fh:
+                fh.write("Garmin rejected the login\n")
+    except OSError:
+        pass  # never break a tool call because of the marker
+
+
+_original_getattr = _original(garmin_mcp._GarminProxy, "__getattr__")
+
+
+def _watched_getattr(self, name):
+    attr = _original_getattr(self, name)
+    if not callable(attr) or isinstance(attr, garmin_mcp._GarminProxy):
+        return attr
+
+    @functools.wraps(attr)
+    def watched(*args, **kwargs):
+        try:
+            result = attr(*args, **kwargs)
+        except Exception as exc:
+            if RELOGIN_HINT in str(exc):
+                mark_login(False)
+            raise
+        mark_login(True)
+        return result
+
+    return watched
+
+
+garmin_mcp._GarminProxy.__getattr__ = _watched_getattr
+
 # 2. Login from saved tokens failed at start-up -> every tool call reports this
-_original_init_api = garmin_mcp.init_api
+_original_init_api = _original(garmin_mcp, "init_api")
 
 
 def _init_api(*args, **kwargs):
     client = _original_init_api(*args, **kwargs)
     if client is None:
+        mark_login(False)
         raise RuntimeError(RELOGIN_HINT)
     return client
 
@@ -50,7 +102,7 @@ garmin_mcp.init_api = _init_api
 
 # 3. Log level of the MCP server (uvicorn access log, request logging)
 _level = os.environ.get("GARMIN_APP_LOG_LEVEL", "WARNING").upper()
-_original_fastmcp_init = fastmcp_module.FastMCP.__init__
+_original_fastmcp_init = _original(fastmcp_module.FastMCP, "__init__")
 
 
 def _fastmcp_init(self, *args, **kwargs):
@@ -113,7 +165,7 @@ def confine_paths(fn):
     return guarded
 
 
-_original_tool = garmin_mcp._ToolFilter.tool
+_original_tool = _original(garmin_mcp._ToolFilter, "tool")
 
 
 def _tool(self, *args, **kwargs):

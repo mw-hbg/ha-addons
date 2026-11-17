@@ -64,6 +64,9 @@ SECRET_FILE = DATA / "secret_path"
 ACCOUNT_FILE = DATA / "account.json"
 DOWNLOAD_DIR = DATA / "downloads"
 MCP_HOME = DATA / "mcp_home"
+# Written by the MCP server when Garmin rejects the login during a tool call
+# (run_mcp.py); removed on success and on a new login.
+AUTH_FAILED_FILE = MCP_HOME / "auth_failed"
 # The internet-facing MCP server runs as this unprivileged user (created in the
 # Dockerfile). It may only write its tokens, downloads and its home folder –
 # never the Home Assistant configuration folder mapped into the container.
@@ -662,11 +665,20 @@ class Services:
             )
             self.restart_mcp()
 
+    def shown_state(self) -> str:
+        """mcp_state, but 'failed' while Garmin rejects the login of the running server."""
+        state = self.mcp_state()
+        if state == "ready" and AUTH_FAILED_FILE.exists():
+            return "failed"
+        return state
+
     def login_status(self) -> str:
         """For the helper integration: 'ok', 'failed' (after retries), 'logged_out' or 'starting'."""
         if not has_tokens():
             return "logged_out"
         state = self.mcp_state()
+        if state == "ready" and AUTH_FAILED_FILE.exists():
+            return "failed"  # Garmin rejected the login while the server was running
         if state == "ready":
             return "ok"
         if state == "failed" and self._login_failures >= 2:
@@ -1115,6 +1127,7 @@ def _finish_login(garmin: Garmin) -> str:
     secure_dir(TOKEN_DIR)
     write_private(ACCOUNT_FILE, json.dumps({"name": name, "since": int(time.time())}))
     log.info("Logged in to Garmin Connect")
+    AUTH_FAILED_FILE.unlink(missing_ok=True)
     SERVICES.reset_login_state()
     SERVICES.restart_mcp()
     return name
@@ -1165,7 +1178,7 @@ def finish_mfa(code: str) -> None:
 def logout() -> None:
     SERVICES.stop_mcp()
     shutil.rmtree(TOKEN_DIR, ignore_errors=True)
-    for path in (ACCOUNT_FILE, DATA / "garmin_tokens.b64"):
+    for path in (ACCOUNT_FILE, DATA / "garmin_tokens.b64", AUTH_FAILED_FILE):
         path.unlink(missing_ok=True)
     log.info("Logged out of Garmin Connect, tokens deleted")
 
@@ -1360,7 +1373,7 @@ async def index(request: Request) -> Response:
     parts.append("</div>")
 
     # Server card
-    state = await anyio.to_thread.run_sync(services.mcp_state)
+    state = await anyio.to_thread.run_sync(services.shown_state)
     state_cls = {"ready": "ok", "failed": "err", "pending": "warn"}.get(state, "muted")
     custom = SELECTION_FILE.exists()
     wa = services.options.get("write_access", "create_only")
@@ -1794,7 +1807,7 @@ async def mcp_unavailable(request: Request) -> Response:
 async def status(request: Request) -> Response:
     if (denied := _guard(request, allow_local=True)) is not None:
         return denied
-    state = await anyio.to_thread.run_sync(SERVICES.mcp_state)
+    state = await anyio.to_thread.run_sync(SERVICES.shown_state)
     return JSONResponse(
         {
             "logged_in": has_tokens(),

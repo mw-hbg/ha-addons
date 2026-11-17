@@ -266,6 +266,9 @@ def test_page_is_only_for_home_assistant(monkeypatch):
         def mcp_state(self):
             return "stopped"
 
+        def shown_state(self):
+            return "stopped"
+
     monkeypatch.setattr(L, "SERVICES", FakeServices(), raising=False)
     for ip, page, status_json in (("127.0.0.1", 403, 200), ("172.30.32.2", None, 200), ("8.8.8.8", 403, 403)):
         with TestClient(L.app, client=(ip, 50000)) as client:
@@ -328,3 +331,41 @@ def test_apparmor_profile_limits_the_home_assistant_folder():
     assert sorted(executables) == ["/usr/local/bin/python3*", "/usr/sbin/nginx"]
     for capability in ("sys_admin", "net_admin", "sys_module", "sys_ptrace", "net_raw"):
         assert f"capability {capability}" not in profile
+
+
+def test_rejected_login_during_a_call_is_reported(run_mcp, tmp_path, monkeypatch):
+    """Garmin rejects the tokens while the server runs (e.g. password changed):
+    the server leaves a marker, the app shows 'login failed' and HA a repair notice."""
+    import garmin_mcp
+    from garminconnect import GarminConnectAuthenticationError
+
+    marker = tmp_path / "auth_failed"
+    monkeypatch.setattr(run_mcp, "AUTH_FAILED_MARKER", str(marker))
+
+    class Client:
+        fail = True
+
+        def get_activities(self):
+            if self.fail:
+                raise GarminConnectAuthenticationError("401")
+            return []
+
+    client = Client()
+    proxy = garmin_mcp._GarminProxy(client)
+    with pytest.raises(Exception) as err:
+        proxy.get_activities()
+    assert run_mcp.RELOGIN_HINT in str(err.value)
+    assert marker.exists()
+    client.fail = False
+    assert proxy.get_activities() == []
+    assert not marker.exists()
+
+
+def test_app_shows_failed_login_from_the_marker(monkeypatch, tmp_path):
+    services = L.Services()
+    monkeypatch.setattr(L, "AUTH_FAILED_FILE", tmp_path / "auth_failed")
+    monkeypatch.setattr(L, "has_tokens", lambda: True)
+    monkeypatch.setattr(services, "mcp_state", lambda: "ready")
+    assert services.login_status() == "ok" and services.shown_state() == "ready"
+    (tmp_path / "auth_failed").write_text("x")
+    assert services.login_status() == "failed" and services.shown_state() == "failed"

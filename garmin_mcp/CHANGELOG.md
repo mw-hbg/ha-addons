@@ -4,11 +4,17 @@
 
 - Fixed: the app page could keep showing "starting …" after logging in, although the
   server was already running. It now updates as soon as the status changes.
+- Fixed: if Garmin rejects the login while the app is running (e.g. after changing the
+  Garmin password), the app page now shows "login failed" and Home Assistant shows the
+  repair notice. Before, only the AI app got an error message.
 
 ---
 
 - Behoben: Die App-Seite zeigte nach dem Anmelden manchmal weiter „startet …“, obwohl der
   Server schon lief. Sie aktualisiert sich jetzt, sobald sich der Status ändert.
+- Behoben: Lehnt Garmin die Anmeldung im laufenden Betrieb ab (z. B. nach einer Änderung des
+  Garmin-Passworts), zeigt die App-Seite jetzt „Anmeldung fehlgeschlagen“ und Home Assistant
+  den Reparatur-Hinweis. Vorher bekam nur die KI-App eine Fehlermeldung.
 
 ## 0.5.1
 
