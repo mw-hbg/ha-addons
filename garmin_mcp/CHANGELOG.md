@@ -1,5 +1,19 @@
 # Changelog
 
+## Unreleased
+
+- Improved: the German documentation is now shown in Home Assistant too – the
+  *Documentation* tab and the app store description contain English and German (Home
+  Assistant can only show one file each). The *Documentation* link on the app page jumps
+  to your language.
+
+---
+
+- Verbessert: Die deutsche Anleitung erscheint jetzt auch in Home Assistant – der Reiter
+  *Dokumentation* und die Beschreibung im App-Store enthalten Englisch und Deutsch (Home
+  Assistant kann jeweils nur eine Datei anzeigen). Der Link *Dokumentation* auf der App-Seite
+  springt direkt zu deiner Sprache.
+
 ## 0.5.5
 
 - Fixed: after reinstalling the app without restarting Home Assistant, the old helper

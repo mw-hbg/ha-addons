@@ -1529,7 +1529,7 @@ async def index(request: Request) -> Response:
 
     parts.append(
         f'<p class="muted footer">Garmin Connect MCP {html.escape(os.environ.get("APP_VERSION", "dev"))}'
-        f' · <a href="{DOCS_BASE}/{t["docs_file"]}" target="_blank" rel="noopener">{t["docs"]}</a>'
+        f' · <a href="{DOCS_BASE}/DOCS.md#{t["docs_section"]}" target="_blank" rel="noopener">{t["docs"]}</a>'
         + (f" · {links}" if (links := _language_links(request, lang)) else "")
         + "</p>"
     )

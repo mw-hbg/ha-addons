@@ -113,7 +113,7 @@
     "remote_disabled": "Aus",
     "restart_hint": "Die App hat ihre kleine Hilfs-Integration für den Fernzugriff installiert bzw. aktualisiert. Home Assistant lädt sie erst nach einem Neustart: Einstellungen → System → Neu starten (oder über den Reparatur-Hinweis, falls angezeigt). Bis dahin kann der Connector nicht funktionieren – die Anmeldung bei Garmin geht schon.",
     "no_base_url": "In Home Assistant ist keine externe Adresse hinterlegt. Trage sie unter Einstellungen → System → Netzwerk ein oder in der App-Konfiguration als „Öffentliche Adresse“ – bis dahin den Platzhalter ersetzen.",
-    "docs_file": "DOCS.de.md",
+    "docs_section": "deutsch",
     "detail_no_config_access": "kein Zugriff auf den Home-Assistant-Konfigurationsordner",
     "info": "Info",
     "docs_table_head": "| Tool | Was es tut | Art | Bereiche |",

@@ -59,8 +59,8 @@ nutzt.
 **Installation:** Knopf oben anklicken oder unter *Einstellungen → Apps → App
 installieren → ⋮ → Repositories* `https://github.com/mw-hbg/ha-garmin-mcp`
 eintragen, dann **Garmin Connect MCP** installieren. Schritt für Schritt:
-[App-README](garmin_mcp/README.de.md) · ausführliche Anleitung:
-[DOCS.de.md](garmin_mcp/DOCS.de.md) (auch im Reiter *Dokumentation* der App).
+[App-README](garmin_mcp/README.md#deutsch) · ausführliche Anleitung:
+[DOCS.md](garmin_mcp/DOCS.md#deutsch) (auch im Reiter *Dokumentation* der App).
 
 > **Umgezogen:** Dieses Repository hieß früher `mw-hbg/ha-apps` (davor
 > `mw-hbg/ha-addons`). Eine alte Adresse **einfach stehen lassen** – sie wird

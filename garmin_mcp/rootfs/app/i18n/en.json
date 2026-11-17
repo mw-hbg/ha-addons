@@ -113,7 +113,7 @@
     "remote_disabled": "Off",
     "restart_hint": "The app has installed or updated its small helper integration for remote access. Home Assistant loads it only after a restart: Settings → System → Restart (or the repair notice, if shown). Until then the connector cannot work – logging in to Garmin already works.",
     "no_base_url": "Home Assistant has no external URL configured. Set it under Settings → System → Network, or enter it as “Public address” in the app configuration – until then, replace the placeholder.",
-    "docs_file": "DOCS.md",
+    "docs_section": "english",
     "detail_no_config_access": "no access to the Home Assistant config folder",
     "info": "Info",
     "docs_table_head": "| Tool | What it does | Type | Areas |",

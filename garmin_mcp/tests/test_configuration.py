@@ -42,10 +42,11 @@ def test_options_schema_defaults_and_translations_match():
 
 
 def test_documentation_lists_every_option():
-    for name in ("DOCS.md", "DOCS.de.md"):
-        docs = (APP_DIR / name).read_text()
+    docs = (APP_DIR / "DOCS.md").read_text(encoding="utf-8")
+    english, german = docs.split("\n## Deutsch\n")
+    for part, name in ((english, "English"), (german, "Deutsch")):
         for key in L.DEFAULT_OPTIONS:
-            assert f"| `{key}` |" in docs, (name, key)
+            assert f"| `{key}` |" in part, (name, key)
 
 
 def test_area_names_match_the_server_profiles():

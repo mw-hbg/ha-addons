@@ -1,4 +1,8 @@
-"""Regenerate the tool tables in DOCS.md / DOCS.<lang>.md from the code.
+"""Regenerate the tool tables in DOCS.md from the code.
+
+DOCS.md holds every language in one file (Home Assistant shows only DOCS.md):
+a section "## English", "## Deutsch", … each with its own table between
+<!-- tools:<lang>:start --> and <!-- tools:<lang>:end -->.
 
 Run after a server update or a translation change (in the app folder):
     python scripts/update_docs.py
@@ -25,7 +29,11 @@ import i18n  # noqa: E402
 import launcher as L  # noqa: E402
 from garmin_mcp.tool_profiles import TOOL_PROFILES  # noqa: E402
 
-START, END = "<!-- tools:start -->", "<!-- tools:end -->"
+DOCS = APP / "DOCS.md"
+
+
+def markers(lang: str) -> tuple[str, str]:
+    return f"<!-- tools:{lang}:start -->", f"<!-- tools:{lang}:end -->"
 
 
 def areas_of(name: str) -> list[str]:
@@ -45,23 +53,29 @@ def table(lang: str) -> str:
     return "\n".join(rows)
 
 
-def render(text: str, lang: str) -> str:
-    pattern = re.compile(re.escape(START) + ".*?" + re.escape(END), re.S)
-    if not pattern.search(text):
-        raise SystemExit(f"markers {START} / {END} missing")
-    return pattern.sub(f"{START}\n{table(lang)}\n{END}", text)
+def languages_in(text: str) -> list[str]:
+    """Languages that have a tool table in the text (English must be one)."""
+    return [lang for lang in i18n.LANGUAGES if markers(lang)[0] in text]
 
 
-def docs_files() -> dict[str, Path]:
-    return {code: APP / i18n.ui(code)["docs_file"] for code in i18n.LANGUAGES}
+def render(text: str) -> str:
+    if "en" not in languages_in(text):
+        raise SystemExit("DOCS.md: markers <!-- tools:en:start --> / <!-- tools:en:end --> missing")
+    for lang in languages_in(text):
+        start, end = markers(lang)
+        pattern = re.compile(re.escape(start) + ".*?" + re.escape(end), re.S)
+        if not pattern.search(text):
+            raise SystemExit(f"DOCS.md: {end} missing")
+        text = pattern.sub(lambda _m: f"{start}\n{table(lang)}\n{end}", text)
+    return text
 
 
 def main() -> None:
-    for lang, path in docs_files().items():
-        new = render(path.read_text(), lang)
-        if new != path.read_text():
-            path.write_text(new)
-            print("updated", path.relative_to(ROOT))
+    old = DOCS.read_text(encoding="utf-8")
+    new = render(old)
+    if new != old:
+        DOCS.write_text(new, encoding="utf-8")
+        print("updated", DOCS.relative_to(ROOT))
 
 
 if __name__ == "__main__":

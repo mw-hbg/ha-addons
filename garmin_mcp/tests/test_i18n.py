@@ -54,8 +54,12 @@ def test_every_language_has_ha_translations(code):
     assert (APP / "translations" / f"{code}.yaml").exists()
     integration = APP / "rootfs" / "app" / "integration" / "garmin_mcp_webhook" / "translations"
     assert (integration / f"{code}.json").exists()
-    docs = raw(code)["ui"]["docs_file"]
-    assert (APP / docs).exists(), docs
+    # The app page links to this section of DOCS.md (English if a language has none)
+    section = i18n.ui(code)["docs_section"]
+    headings = re.findall(r"^## (.+)$", (APP / "DOCS.md").read_text(encoding="utf-8"), re.M)
+    # GitHub's anchor for a heading: lower case, punctuation removed, spaces → "-"
+    anchors = {re.sub(r"[^\w\- ]", "", h).strip().lower().replace(" ", "-") for h in headings}
+    assert section in anchors, (section, anchors)
 
 
 def test_ha_translations_have_the_same_structure():
@@ -138,10 +142,19 @@ def test_documentation_tool_tables_are_current():
     spec = importlib.util.spec_from_file_location("update_docs", ROOT / "scripts" / "update_docs.py")
     update_docs = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(update_docs)
-    for lang, path in update_docs.docs_files().items():
-        assert update_docs.render(path.read_text(), lang) == path.read_text(), (
-            f"{path.name} is out of date – run: python scripts/update_docs.py"
-        )
+    text = update_docs.DOCS.read_text(encoding="utf-8")
+    assert update_docs.render(text) == text, "DOCS.md is out of date – run: python scripts/update_docs.py"
+    assert set(update_docs.languages_in(text)) == {"en", "de"}
+
+
+def test_readme_and_docs_hold_every_language_in_one_file():
+    """Home Assistant shows only README.md and DOCS.md – so both languages live there."""
+    for name in ("README.md", "DOCS.md"):
+        text = (APP / name).read_text(encoding="utf-8")
+        assert "\n## English\n" in text and "\n## Deutsch\n" in text, name
+        assert text.index("\n## English\n") < text.index("\n## Deutsch\n"), name
+        assert "[Deutsch](#deutsch)" in text, name
+    assert not list(APP.glob("README.*.md")) and not list(APP.glob("DOCS.*.md"))
 
 
 def test_translating_guide_matches_the_files():
