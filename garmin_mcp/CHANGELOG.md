@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.5.3
 
 - Improved: if Garmin no longer accepts the login, the app page shows **Log in again** right
   away – no need to log out first. Settings and connector URL stay the same.
