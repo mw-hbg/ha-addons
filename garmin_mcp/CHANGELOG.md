@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.6.2
 
 - Security: the connection test no longer lets the app's internal part (root) write into
   the folder of the MCP server's user – it reads the Garmin tokens from a private copy and
