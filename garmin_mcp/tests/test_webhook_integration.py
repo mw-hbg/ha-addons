@@ -213,11 +213,13 @@ def test_discovery_creates_updates_and_replaces_the_entry():
         }
         assert hass.config_entries.removed == ["old"]
         assert [e.unique_id for e in hass.config_entries.entries] == ["u1"]
-        # same announcement with a second account: entry updated and reloaded, no second entry
+        # same announcement with a second account: entry updated, NOT reloaded
+        # (the update listener applies it), no second entry
         result = await run_flow_step(_flow(hass), "async_step_hassio", _discovery(MULTI))
         assert result == {"type": "abort", "reason": "already_configured"}
         data = hass.config_entries.entries[0].data
-        assert [a["name"] for a in data["accounts"]] == ["Moritz", "Belinda"] and hass.config_entries.reloaded
+        assert [a["name"] for a in data["accounts"]] == ["Moritz", "Belinda"]
+        assert not hass.config_entries.reloaded
         # junk is refused
         result = await run_flow_step(_flow(hass), "async_step_hassio", _discovery({"target_url": "x"}, "u2"))
         assert result["reason"] == "invalid_discovery"
@@ -321,6 +323,52 @@ def test_several_accounts_get_webhooks_switches_and_notices(monkeypatch):
             assert not {"wh_m", "wh_b"} & set(REGISTERED)
             issue_registry.ISSUES.clear()
             await runner.cleanup()
+
+    asyncio.run(run())
+
+
+def test_accounts_change_without_touching_the_other_switches(monkeypatch):
+    """Adding, renaming and removing an account in the app changes only that
+    account: no reload, the switches of the other accounts stay as they are."""
+    from homeassistant.helpers import device_registry
+
+    async def run():
+        monkeypatch.setattr(integration, "async_track_time_interval", lambda h, action, i: lambda: None)
+        hass = HomeAssistant()
+        one = {"id": "1", "name": "", "webhook_id": "wh_1", "target_url": "http://127.0.0.1:1/a/mcp"}
+        entry = ConfigEntry("dyn", {"accounts": [one], "report_url": None, "app_slug": "abcd1234_garmin_mcp"})
+        device_1 = device_registry.REGISTRY.add("dyn", {("garmin_mcp_webhook", "dyn")}, "Garmin Connect MCP")
+        try:
+            await integration.async_setup_entry(hass, entry)
+            first = hass.config_entries.entities[0]
+            assert first._attr_device_info["name"] == "Garmin Connect MCP"  # single account: no name
+            await first.async_turn_off()
+            # a second account: account 1 gets its name, its switch object stays (and stays off)
+            two = {"id": "2", "name": "Test", "webhook_id": "wh_2", "target_url": "http://127.0.0.1:1/b/mcp"}
+            hass.config_entries.async_update_entry(entry, data={**entry.data, "accounts": [{**one, "name": "Moritz"}, two]})
+            await asyncio.gather(*hass.tasks)
+            assert not hass.config_entries.reloaded
+            assert hass.config_entries.entities[0] is first and not first.is_on
+            assert [e._attr_unique_id for e in hass.config_entries.entities] == ["dyn_mcp_server", "dyn_2_mcp_server"]
+            assert device_1.name == "Garmin Connect MCP Moritz"
+            assert {"wh_1", "wh_2"} <= set(REGISTERED)
+            # a new secret URL for account 2: new webhook, old one gone
+            hass.config_entries.async_update_entry(
+                entry, data={**entry.data, "accounts": [{**one, "name": "Moritz"}, {**two, "webhook_id": "wh_2b"}]}
+            )
+            await asyncio.gather(*hass.tasks)
+            assert "wh_2b" in REGISTERED and "wh_2" not in REGISTERED
+            # account 2 removed: its webhook and device go, account 1 is untouched
+            device_2 = device_registry.REGISTRY.add("dyn", {("garmin_mcp_webhook", "dyn_2")})
+            hass.config_entries.async_update_entry(entry, data={**entry.data, "accounts": [one]})
+            await asyncio.gather(*hass.tasks)
+            assert "wh_2b" not in REGISTERED and "wh_1" in REGISTERED
+            assert device_2.id in device_registry.REGISTRY.removed and device_1.id not in device_registry.REGISTRY.removed
+            assert device_1.name == "Garmin Connect MCP" and not first.is_on
+            assert not hass.config_entries.reloaded
+        finally:
+            await integration.async_unload_entry(hass, entry)
+            assert not {"wh_1", "wh_2", "wh_2b"} & set(REGISTERED)
 
     asyncio.run(run())
 

@@ -580,9 +580,18 @@ class Account:
     def garmin_name(self) -> str:
         return str(read_account(self.info_file).get("name") or "")
 
+    def garmin_profile(self) -> str:
+        """Garmin's own id of the profile (stored at login since 0.6.1)."""
+        return str(read_account(self.info_file).get("profile") or "")
+
     def display_name(self) -> str:
         """Own name > name of the Garmin profile > number."""
         return self.custom_name or self.garmin_name() or self.id
+
+    def shown_name(self) -> str:
+        """Name in Home Assistant (device, switch) – only once there are
+        several accounts; a single account needs none."""
+        return self.display_name() if self.services.named else ""
 
     def has_tokens(self) -> bool:
         return has_tokens(self.token_dir)
@@ -880,6 +889,28 @@ class Services:
         """The first account (the one older helper integrations know about)."""
         return next(iter(self.accounts.values()), None)
 
+    @property
+    def named(self) -> bool:
+        """Names are only shown (and editable) from the second account on."""
+        return len(self.accounts) > 1
+
+    def same_garmin_account(self, account: Account) -> list[Account]:
+        """Other accounts logged in to the same Garmin account."""
+        if not account.has_tokens():
+            return []
+        profile, name = account.garmin_profile(), account.garmin_name()
+        same = []
+        for other in self.accounts.values():
+            if other is account or not other.has_tokens():
+                continue
+            theirs = other.garmin_profile()
+            if profile and theirs:
+                if profile == theirs:
+                    same.append(other)
+            elif name and name == other.garmin_name():  # logged in before 0.6.1
+                same.append(other)
+        return same
+
     def account(self, account_id) -> Account:
         account = self.accounts.get(str(account_id or ""))
         if account is None:
@@ -1119,7 +1150,7 @@ class RemoteAccess:
         accounts = [
             {
                 "id": account.id,
-                "name": account.display_name(),
+                "name": account.shown_name(),
                 "webhook_id": account.webhook_id,
                 "target_url": f"{host}/{account.secret}/mcp",
             }
@@ -1444,10 +1475,11 @@ def _finish_login(account: "Account", garmin: Garmin) -> str:
     verify = Garmin()
     verify.login(str(tmp))
     name = verify.full_name or verify.display_name or ""
+    profile = str(verify.display_name or "")[:200]
     shutil.rmtree(account.token_dir, ignore_errors=True)
     tmp.rename(account.token_dir)
     secure_dir(account.token_dir)
-    write_private(account.info_file, json.dumps({"name": name, "since": int(time.time())}))
+    write_private(account.info_file, json.dumps({"name": name, "profile": profile, "since": int(time.time())}))
     log.info("[%s] Logged in to Garmin Connect", name or account.id)
     account.auth_failed_file.unlink(missing_ok=True)
     account.reset_login_state()
@@ -1704,19 +1736,22 @@ def _connector_url(account: "Account", base: str) -> str:
 
 async def _account_card(request: Request, lang: str, t: dict, account: "Account", base: str) -> str:
     csrf, acc = _csrf(), _acc_field(account)
-    name = html.escape(account.display_name() if (account.custom_name or account.garmin_name()) else t["account_n"].format(n=account.id))
     garmin_name = account.garmin_name()
     parts = ['<div class="card">']
-    parts.append(
-        f'<div class="row"><h2 style="margin:0">{name}</h2>'
-        f'<details class="rename"><summary title="{t["rename"]}" aria-label="{t["rename"]}">✏️</summary>'
-        f'<form method="post" action="accounts/rename">{csrf}{acc}'
-        f'<label>{t["rename"]}</label><input name="name" maxlength="40" value="{html.escape(account.custom_name, quote=True)}" '
-        f'placeholder="{html.escape(garmin_name or t["account_n"].format(n=account.id), quote=True)}">'
-        f'<p class="muted">{t["rename_hint"]}</p><button type="submit">{t["save_name"]}</button></form></details></div>'
-    )
-    if account.custom_name and garmin_name:
-        parts.append(f'<p class="muted" style="margin:4px 0 0">{t["garmin_profile"]}: {html.escape(garmin_name)}</p>')
+    if SERVICES.named:  # names only from the second account on
+        title = account.display_name() if (account.custom_name or garmin_name) else t["account_n"].format(n=account.id)
+        parts.append(
+            f'<div class="row"><h2 style="margin:0">{html.escape(title)}</h2>'
+            f'<details class="rename"><summary title="{t["rename"]}" aria-label="{t["rename"]}">✏️</summary>'
+            f'<form method="post" action="accounts/rename">{csrf}{acc}'
+            f'<label>{t["rename"]}</label><input name="name" maxlength="40" value="{html.escape(account.custom_name, quote=True)}" '
+            f'placeholder="{html.escape(garmin_name or t["account_n"].format(n=account.id), quote=True)}">'
+            f'<p class="muted">{t["rename_hint"]}</p><button type="submit">{t["save_name"]}</button></form></details></div>'
+        )
+        if account.custom_name and garmin_name:
+            parts.append(f'<p class="muted" style="margin:4px 0 0">{t["garmin_profile"]}: {html.escape(garmin_name)}</p>')
+    else:
+        parts.append(f'<h2>{t["garmin_account"]}</h2>')
 
     # login
     login_broken = account.has_tokens() and await anyio.to_thread.run_sync(account.login_status) == "failed"
@@ -1741,10 +1776,12 @@ async def _account_card(request: Request, lang: str, t: dict, account: "Account"
         )
     elif account.has_tokens():
         parts.append(f'<p>{t["connected_as"]} <b>{html.escape(garmin_name or "–")}</b></p>')
-        if account.options().get("write_access") != "read_only":
-            parts.append(f'<p class="muted">{t["upload_hint"]}</p>')
     else:
         parts.append(f'<p class="muted">{t["not_connected"]}</p>' + login_form.replace("{button}", t["login"]))
+    if same := SERVICES.same_garmin_account(account):
+        quote = "„{}“" if lang == "de" else "“{}”"
+        others = ", ".join(quote.format(other.display_name()) for other in same)
+        parts.append(f'<p class="warn">{html.escape(t["duplicate_account"].format(names=others))}</p>')
 
     # server and rights
     state = await anyio.to_thread.run_sync(account.shown_state)
@@ -1787,6 +1824,9 @@ async def _account_card(request: Request, lang: str, t: dict, account: "Account"
         parts.append(f'<p class="muted">{t["no_base_url"]}</p>')
 
     # test, new URL, log out, remove
+    remove_text = (
+        t["remove_confirm_named"].format(name=account.display_name()) if SERVICES.named else t["remove_confirm"]
+    )
     parts.append(_test_html(t, account.test_result))
     parts.append(
         '<div class="row">'
@@ -1799,7 +1839,8 @@ async def _account_card(request: Request, lang: str, t: dict, account: "Account"
             f'<button type="submit" class="secondary">{t["logout"]}</button></form>'
             if account.has_tokens() else ""
         )
-        + f'<form method="post" action="accounts/remove" onsubmit="return confirm(\'{t["remove_confirm"]}\')">{csrf}{acc}'
+        + f'<form method="post" action="accounts/remove" data-confirm="{html.escape(remove_text, quote=True)}" '
+        f'onsubmit="return confirm(this.dataset.confirm)">{csrf}{acc}'
         f'<button type="submit" class="secondary danger">{t["remove_account"]}</button></form></div>'
     )
     parts.append("</div>")
@@ -1828,6 +1869,9 @@ async def index(request: Request) -> Response:
     accounts = list(services.accounts.values())
     if len(accounts) >= LOAD_WARNING_FROM:
         parts.append(f'<div class="banner">{t["load_warning"]}</div>')
+
+    if any(a.has_tokens() and a.options().get("write_access") != "read_only" for a in accounts):
+        parts.append(f'<p class="muted">{t["upload_hint"]}</p>')
 
     base = await anyio.to_thread.run_sync(REMOTE.base_url) if REMOTE.enabled else ""
     for account in accounts:

@@ -192,7 +192,7 @@ def test_page_shows_every_account_with_its_own_url(page):
     second = services.add_account()
     services.rename_account(second, "Belinda")
     html = client.get("/", headers={"Accept-Language": "de"}).text
-    assert "Konto 1" in html and "Belinda" in html
+    assert "Konto 1" in html and "Belinda" in html and "✏️" in html
     assert services.primary.webhook_id in html and second.webhook_id in html
     assert html.count('name="account" value="1"') >= 3 and f'name="account" value="{second.id}"' in html
     assert "Garmin-Konto hinzufügen" in html and "Gleiche Einstellungen für alle Konten" in html
@@ -261,3 +261,58 @@ def test_status_json_lists_every_account(page):
     data = client.get("/status.json").json()
     assert [a["id"] for a in data["accounts"]] == ["1", second.id]
     assert re.fullmatch(r"1:\w+:[01]\|\d+:\w+:[01]\|\w+", data["state"])
+
+
+def test_names_only_from_the_second_account_on(page):
+    services, client = page
+    L.write_private(services.primary.info_file, json.dumps({"name": "Moritz Weidelener", "profile": "p1"}))
+    remote = L.REMOTE
+    html = client.get("/", headers={"Accept-Language": "de"}).text
+    assert "✏️" not in html and "<h2>Garmin-Konto</h2>" in html
+    assert remote.discovery_config()["accounts"][0]["name"] == ""  # Home Assistant: no name
+    assert "Konto entfernen?" in html or "Dieses Konto entfernen?" in html
+    second = services.add_account()
+    html = client.get("/", headers={"Accept-Language": "de"}).text
+    assert html.count("✏️") == 2 and "Moritz Weidelener" in html
+    assert [a["name"] for a in remote.discovery_config()["accounts"]] == ["Moritz Weidelener", second.id]
+    services.rename_account(services.primary, "Mo")
+    services.remove_account(second)
+    html = client.get("/", headers={"Accept-Language": "de"}).text
+    assert "✏️" not in html and remote.discovery_config()["accounts"][0]["name"] == ""
+    assert services.primary.custom_name == "Mo"  # kept for when a second account comes back
+
+
+def test_remove_question_names_the_account_safely(page):
+    services, client = page
+    second = services.add_account()
+    services.rename_account(second, "Te'st</form><script>")
+    html = client.get("/", headers={"Accept-Language": "de"}).text
+    assert "Konto „Te&#x27;st&lt;/form&gt;&lt;script&gt;“ entfernen?" in html
+    assert "<script>" not in html.split("</style>")[-1].split("<script")[0]  # never as markup
+    assert 'onsubmit="return confirm(this.dataset.confirm)"' in html
+
+
+def test_same_garmin_account_twice_is_pointed_out(page):
+    services, client = page
+    second, third = services.add_account(), services.add_account()
+    for account, profile in ((services.primary, "p1"), (second, "p1"), (third, "p2")):
+        account.token_dir.mkdir(parents=True, exist_ok=True)
+        (account.token_dir / "garmin_tokens.json").write_text("{}")
+        L.write_private(account.info_file, json.dumps({"name": "Moritz Weidelener", "profile": profile}))
+    services.rename_account(second, "Test")
+    assert services.same_garmin_account(services.primary) == [second]
+    assert services.same_garmin_account(third) == []  # same name, other Garmin profile
+    html = client.get("/", headers={"Accept-Language": "de"}).text
+    assert html.count("Dieses Garmin-Konto ist auch als") == 2 and "„Test“" in html
+    # logged in before 0.6.1 (no profile id): the name decides
+    L.write_private(third.info_file, json.dumps({"name": "Moritz Weidelener"}))
+    assert third in services.same_garmin_account(services.primary)
+
+
+def test_upload_hint_only_once(page):
+    services, client = page
+    for account in (services.primary, services.add_account()):
+        account.token_dir.mkdir(parents=True, exist_ok=True)
+        (account.token_dir / "garmin_tokens.json").write_text("{}")
+    html = client.get("/", headers={"Accept-Language": "en"}).text
+    assert html.count("Upload device data") == 1

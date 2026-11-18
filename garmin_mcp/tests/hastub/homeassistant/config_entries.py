@@ -9,9 +9,14 @@ class ConfigEntry:
         self.unique_id = unique_id
         self.domain = domain
         self.unloads = []
+        self.update_listeners = []
 
     def async_on_unload(self, func):
         self.unloads.append(func)
+
+    def add_update_listener(self, listener):
+        self.update_listeners.append(listener)
+        return lambda: self.update_listeners.remove(listener)
 
 
 class _Abort(Exception):
@@ -40,8 +45,10 @@ class ConfigFlow:
         for entry in self.hass.config_entries.entries:
             if entry.unique_id == self.unique_id:
                 if updates is not None and entry.data != updates:
-                    entry.data = dict(updates)
-                    self.hass.config_entries.reloaded.append(entry.entry_id)
+                    # like Home Assistant: update listeners run on every change
+                    self.hass.config_entries.async_update_entry(entry, data=updates)
+                    if reload_on_update:
+                        self.hass.config_entries.reloaded.append(entry.entry_id)
                 raise _Abort("already_configured")
 
     def async_abort(self, reason):

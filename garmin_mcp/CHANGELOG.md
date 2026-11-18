@@ -1,5 +1,29 @@
 # Changelog
 
+## Unreleased
+
+- Improved: names only from the second account on – with a single account the app page
+  and Home Assistant show no name (device again “Garmin Connect MCP”).
+- Improved: adding, renaming or removing an account no longer reloads the helper
+  integration – the switches of the other accounts stay untouched (before, their
+  “last changed” was reset, which could trigger automations).
+- Improved: **Remove account** names the account in its question; the page points out when
+  the same Garmin account is logged in twice; the note on “Upload device data” is shown
+  once instead of in every card.
+- Helper integration 0.6.0, so Home Assistant asks for one restart.
+
+---
+
+- Verbessert: Namen erst ab dem zweiten Konto – mit nur einem Konto zeigen App-Seite und
+  Home Assistant keinen Namen (Gerät wieder „Garmin Connect MCP“).
+- Verbessert: Hinzufügen, Umbenennen oder Entfernen eines Kontos lädt die
+  Hilfs-Integration nicht mehr neu – die Schalter der anderen Konten bleiben unberührt
+  (bisher wurde ihr „Zuletzt geändert“ zurückgesetzt, was Automationen auslösen konnte).
+- Verbessert: **Konto entfernen** nennt das Konto in der Rückfrage; die Seite weist darauf
+  hin, wenn dasselbe Garmin-Konto zweimal angemeldet ist; der Hinweis zu „Gerätedaten
+  hochladen“ steht einmal statt auf jeder Karte.
+- Hilfs-Integration 0.6.0, daher bittet Home Assistant einmal um einen Neustart.
+
 ## 0.6.0
 
 - New: **several Garmin accounts** in one app – up to 10, e.g. the whole household. Every

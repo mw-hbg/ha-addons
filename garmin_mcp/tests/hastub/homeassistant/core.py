@@ -20,11 +20,21 @@ class _ConfigEntries:
         self.entities = getattr(self, "entities", [])
         for platform in platforms:
             module = importlib.import_module(f"{entry.domain}.{platform}")
-            added = []
-            await module.async_setup_entry(self.hass, entry, added.extend)
-            for entity in added:
-                await entity.async_added_to_hass()
-            self.entities.extend(added)
+            def add(new, entities=self.entities):
+                for entity in new:
+                    entities.append(entity)
+                    self.hass.async_create_task(entity.async_added_to_hass())
+
+            await module.async_setup_entry(self.hass, entry, add)
+            await asyncio.gather(*self.hass.tasks)
+
+    def async_update_entry(self, entry, data=None):
+        if data is None or entry.data == data:
+            return False
+        entry.data = dict(data)
+        for listener in list(entry.update_listeners):
+            self.hass.async_create_task(listener(self.hass, entry))
+        return True
 
     async def async_unload_platforms(self, entry, platforms):
         self.entities = []

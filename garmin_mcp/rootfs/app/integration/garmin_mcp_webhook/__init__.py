@@ -15,7 +15,13 @@ except errors – the webhook id is never written to the log.
 
 Every account is a device with a switch "Garmin Connect MCP <name> Server"
 (switch.py): while it is off, the account's webhook answers MCP requests
-itself and the app stops that account's Garmin server.
+itself and the app stops that account's Garmin server. The name is empty while
+the app has a single account.
+
+When the app announces new settings (account added, removed or renamed, secret
+URL rotated), the entry is updated without a reload: webhooks, devices and
+switches are added, changed or removed one by one, so the switches of the other
+accounts are not touched.
 
 The app itself has no access to the Home Assistant API. Everything the app
 page needs to know (external address, language, loaded version) is reported
@@ -41,11 +47,12 @@ from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
 from homeassistant.exceptions import ConfigEntryNotReady
 from homeassistant.helpers import device_registry as dr
+from homeassistant.helpers.dispatcher import async_dispatcher_send
 from homeassistant.helpers import issue_registry as ir
 from homeassistant.helpers.event import async_track_time_interval
 
 from .cleanup import async_app_gone, async_delete_files, async_watch_app
-from .const import DOMAIN, ISSUE_LOGIN, ISSUE_RESTART, PLATFORMS, VERSION
+from .const import DOMAIN, ISSUE_LOGIN, ISSUE_RESTART, PLATFORMS, SIGNAL_NEW_ACCOUNTS, VERSION
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -110,6 +117,77 @@ def device_identifier(entry: ConfigEntry, account_id: str) -> tuple[str, str]:
     return (DOMAIN, entry.entry_id if account_id == "1" else f"{entry.entry_id}_{account_id}")
 
 
+def device_name(name: str) -> str:
+    return f"Garmin Connect MCP {name or ''}".strip()
+
+
+def _register_webhook(hass: HomeAssistant, runtime: dict, account: dict) -> None:
+    acc = runtime["accounts"][account["id"]]
+
+    async def handle(hass: HomeAssistant, wid: str, request: web.Request):
+        if not acc["enabled"]:
+            return await _switched_off(request)
+        return await _forward(request, runtime["session"], acc["target_url"])
+
+    webhook_register(
+        hass,
+        DOMAIN,
+        device_name(account.get("name") or account["id"]),
+        account["webhook_id"],
+        handle,
+        allowed_methods=["POST", "GET"],
+    )
+
+
+def _add_account(hass: HomeAssistant, runtime: dict, account: dict) -> None:
+    runtime["accounts"][account["id"]] = {
+        "id": account["id"],
+        "name": account.get("name", ""),
+        "webhook_id": account["webhook_id"],
+        "target_url": account["target_url"],
+        "enabled": True,
+    }
+    _register_webhook(hass, runtime, account)
+
+
+async def _async_entry_updated(hass: HomeAssistant, entry: ConfigEntry) -> None:
+    """New settings from the app – apply them without reloading the entry."""
+    runtime = hass.data.get(DOMAIN, {}).get(entry.entry_id)
+    if runtime is None:
+        return
+    runtime["report_url"] = entry.data.get("report_url")
+    wanted = {a["id"]: a for a in entry_accounts(entry)}
+    current = runtime["accounts"]
+    registry = dr.async_get(hass)
+
+    for acc_id in [i for i in current if i not in wanted]:  # removed in the app
+        webhook_unregister(hass, current.pop(acc_id)["webhook_id"])
+        ir.async_delete_issue(hass, DOMAIN, login_issue_id(acc_id))
+
+    added = []
+    for acc_id, account in wanted.items():
+        acc = current.get(acc_id)
+        if acc is None:
+            _add_account(hass, runtime, account)
+            added.append(acc_id)
+            continue
+        name = account.get("name", "")
+        if account["webhook_id"] != acc["webhook_id"] or name != acc["name"]:
+            webhook_unregister(hass, acc["webhook_id"])
+            acc["webhook_id"] = account["webhook_id"]
+            acc["name"] = name
+            _register_webhook(hass, runtime, account)
+            device = registry.async_get_device(identifiers={device_identifier(entry, acc_id)})
+            if device is not None and device.name != device_name(name):
+                registry.async_update_device(device.id, name=device_name(name))
+        acc["target_url"] = account["target_url"]
+
+    if added:
+        async_dispatcher_send(hass, f"{SIGNAL_NEW_ACCOUNTS}_{entry.entry_id}", added)
+    _remove_stale_devices(hass, entry, set(current))
+    hass.async_create_task(runtime["report"]())
+
+
 async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     accounts = entry_accounts(entry)
     report_url = entry.data.get("report_url")
@@ -121,33 +199,10 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         timeout=aiohttp.ClientTimeout(connect=30, sock_connect=10, sock_read=300),
         auto_decompress=False,
     )
-    runtime: dict = {"session": session, "accounts": {}}
+    runtime: dict = {"session": session, "accounts": {}, "report_url": report_url}
 
     for account in accounts:
-        account_runtime = {
-            "id": account["id"],
-            "name": account.get("name", ""),
-            "webhook_id": account["webhook_id"],
-            "enabled": True,
-        }
-        runtime["accounts"][account["id"]] = account_runtime
-
-        def _handler(acc: dict, target_url: str):
-            async def handle(hass: HomeAssistant, wid: str, request: web.Request):
-                if not acc["enabled"]:
-                    return await _switched_off(request)
-                return await _forward(request, session, target_url)
-
-            return handle
-
-        webhook_register(
-            hass,
-            DOMAIN,
-            f"Garmin Connect MCP {account.get('name') or account['id']}",
-            account["webhook_id"],
-            _handler(account_runtime, account["target_url"]),
-            allowed_methods=["POST", "GET"],
-        )
+        _add_account(hass, runtime, account)
     hass.data.setdefault(DOMAIN, {})[entry.entry_id] = runtime
     # notice of the versions with a single account
     ir.async_delete_issue(hass, DOMAIN, ISSUE_LOGIN)
@@ -180,6 +235,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     async def _report(_now=None) -> None:
         """Tell the app how Home Assistant sees it and the switch of every
         account; show the Garmin login state of every account."""
+        report_url = runtime.get("report_url")
         if not report_url:
             return
         payload = {
@@ -226,6 +282,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
     _remove_stale_devices(hass, entry, set(runtime["accounts"]))
 
+    entry.async_on_unload(entry.add_update_listener(_async_entry_updated))
     entry.async_on_unload(async_track_time_interval(hass, _check_update, timedelta(minutes=1)))
     entry.async_on_unload(async_track_time_interval(hass, _report, REPORT_INTERVAL))
     await _check_update()  # before the first report, so the app learns it right away

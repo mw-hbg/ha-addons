@@ -14,15 +14,22 @@ from homeassistant.components.switch import SwitchEntity
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.device_registry import DeviceEntryType, DeviceInfo
+from homeassistant.helpers.dispatcher import async_dispatcher_connect
 from homeassistant.helpers.restore_state import RestoreEntity
 
-from . import device_identifier
-from .const import DOMAIN
+from . import device_identifier, device_name
+from .const import DOMAIN, SIGNAL_NEW_ACCOUNTS
 
 
 async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry, async_add_entities) -> None:
     accounts = hass.data[DOMAIN][entry.entry_id]["accounts"]
     async_add_entities([McpServerSwitch(hass, entry, account_id) for account_id in accounts])
+
+    def _added(account_ids: list[str]) -> None:
+        """Accounts added in the app while the entry stays loaded."""
+        async_add_entities([McpServerSwitch(hass, entry, account_id) for account_id in account_ids])
+
+    entry.async_on_unload(async_dispatcher_connect(hass, f"{SIGNAL_NEW_ACCOUNTS}_{entry.entry_id}", _added))
 
 
 class McpServerSwitch(SwitchEntity, RestoreEntity):
@@ -41,7 +48,7 @@ class McpServerSwitch(SwitchEntity, RestoreEntity):
         self._attr_unique_id = f"{entry.entry_id}_{suffix}"
         self._attr_device_info = DeviceInfo(
             identifiers={device_identifier(entry, account_id)},
-            name=f"Garmin Connect MCP {name}".strip(),
+            name=device_name(name),
             manufacturer="mw-hbg",
             model="Garmin account",
             entry_type=DeviceEntryType.SERVICE,
@@ -53,7 +60,8 @@ class McpServerSwitch(SwitchEntity, RestoreEntity):
 
     @property
     def _account(self) -> dict:
-        return self._runtime["accounts"][self._account_id]
+        # Removed in the app: Home Assistant removes this entity with its device.
+        return self._runtime["accounts"].get(self._account_id) or {"enabled": False}
 
     @property
     def is_on(self) -> bool:

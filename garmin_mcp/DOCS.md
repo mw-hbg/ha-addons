@@ -228,8 +228,13 @@ Every account has:
 * its own Garmin server, running as its own unprivileged user: no account can read another
   account's tokens.
 
-**Name:** by default the name from the Garmin profile; ✏️ next to it sets your own name.
-It is shown on the page and in Home Assistant (device, switch); entity IDs stay the same.
+**Name:** only from the second account on – a single account needs none. Then by default
+the name from the Garmin profile; ✏️ next to it sets your own name. It is shown on the page
+and in Home Assistant (device, switch); entity IDs stay the same. Adding, renaming or
+removing an account leaves the switches of the other accounts untouched.
+
+**Same Garmin account twice:** possible (e.g. one account with all tools, one read-only),
+but the page points it out – usually one is enough.
 
 **Rights:** with **Same settings for all accounts** (default) write access and tool
 choice from the configuration apply to every account. Untick it to set write access,
@@ -754,9 +759,14 @@ an; dort anmelden. Jedes Konto hat:
 * einen eigenen Garmin-Server, der als eigener eingeschränkter Benutzer läuft: Kein Konto
   kann die Tokens eines anderen lesen.
 
-**Name:** standardmäßig der Name aus dem Garmin-Profil; ✏️ daneben setzt einen eigenen
-Namen. Er erscheint auf der Seite und in Home Assistant (Gerät, Schalter);
-Entitäts-IDs bleiben gleich.
+**Name:** erst ab dem zweiten Konto – ein einzelnes Konto braucht keinen. Dann
+standardmäßig der Name aus dem Garmin-Profil; ✏️ daneben setzt einen eigenen Namen. Er
+erscheint auf der Seite und in Home Assistant (Gerät, Schalter); Entitäts-IDs bleiben
+gleich. Hinzufügen, Umbenennen oder Entfernen eines Kontos lässt die Schalter der anderen
+Konten unberührt.
+
+**Dasselbe Garmin-Konto zweimal:** möglich (z. B. einmal mit allen Tools, einmal nur
+lesend), die Seite weist aber darauf hin – meist reicht eines.
 
 **Rechte:** Mit **Gleiche Einstellungen für alle Konten** (Standard) gelten Schreibrechte
 und Tool-Auswahl aus der Konfiguration für jedes Konto. Ohne Haken stellst du

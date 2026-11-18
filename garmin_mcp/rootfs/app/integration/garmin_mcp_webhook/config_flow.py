@@ -4,8 +4,8 @@ The entry is created automatically: the app announces its settings through
 the Supervisor's discovery service, Home Assistant starts this flow with them
 (source "hassio") and the entry is created without questions. When the app
 announces new settings (account added or removed, new secret URL, new name),
-the entry is updated and reloaded. When the app is uninstalled, the
-Supervisor withdraws the announcement and Home Assistant removes the entry by
+the entry is updated without a reload (see __init__.py). When the app is
+uninstalled, the Supervisor withdraws the announcement and Home Assistant removes the entry by
 itself.
 """
 
@@ -77,8 +77,10 @@ class GarminMcpWebhookConfigFlow(ConfigFlow, domain=DOMAIN):
             return self.async_abort(reason="invalid_discovery")
         await self.async_set_unique_id(discovery_info.uuid)
         # Same announcement with new settings (account added/removed/renamed,
-        # secret URL rotated, new IP): update the entry and reload it.
-        self._abort_if_unique_id_configured(updates=data)
+        # secret URL rotated, new IP): update the entry. No reload – the
+        # update listener applies the change, so the switches of the other
+        # accounts stay as they are.
+        self._abort_if_unique_id_configured(updates=data, reload_on_update=False)
         # Only one entry: replace one from an older app version or install.
         for entry in self._async_current_entries(include_ignore=False):
             await self.hass.config_entries.async_remove(entry.entry_id)
