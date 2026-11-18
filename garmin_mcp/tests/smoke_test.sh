@@ -89,7 +89,7 @@ assert init['id'] == 1 and 'not logged in' in init['result']['instructions'], in
 call = mcp('tools/call', 7)
 assert call['id'] == 7 and call['result']['isError'] and 'log in' in call['result']['content'][0]['text'], call
 # the stand-in is only reachable through nginx (it adds the key)
-assert code('http://127.0.0.1:8099/mcp-unavailable', 'POST') == 403
+assert code('http://127.0.0.1:8099/mcp-unavailable/1', 'POST') == 403
 "
 
 echo "3. Secret path is never written to the log"
