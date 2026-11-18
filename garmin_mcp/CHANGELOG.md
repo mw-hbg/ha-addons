@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.6.0
 
 - New: **several Garmin accounts** in one app – up to 10, e.g. the whole household. Every
   account has its own Garmin login, connector URL, connection test, device and switch in
