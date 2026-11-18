@@ -22,6 +22,7 @@ import secrets
 import shutil
 import signal
 import socket
+import stat
 import subprocess
 import sys
 import threading
@@ -406,6 +407,20 @@ def has_tokens(token_dir: Path | None = None) -> bool:
     return ((token_dir or TOKEN_DIR) / "garmin_tokens.json").is_file()
 
 
+def read_tokens(token_dir: Path) -> str:
+    """Token file of an account as text – only a regular file, never a symlink
+    (the folder belongs to the MCP server's user). garminconnect accepts the
+    text itself and then writes nothing back."""
+    fd = os.open(token_dir / "garmin_tokens.json", os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK | os.O_CLOEXEC)
+    with os.fdopen(fd) as fh:
+        if not stat.S_ISREG(os.fstat(fd).st_mode):
+            raise OSError("token file is not a regular file")
+        text = fh.read(64 * 1024)
+    if len(text) <= 512:  # shorter text would be taken for a folder name
+        raise ValueError("token file too short")
+    return text
+
+
 def read_account(path: Path | None = None) -> dict:
     try:
         return json.loads((path or ACCOUNT_FILE).read_text())
@@ -448,11 +463,13 @@ def prepare_mcp_dirs(identity: tuple[int, int] | None, account: "Account | None"
         if identity is None:
             continue
         uid, gid = identity
-        for root, dirs, files in os.walk(folder, followlinks=False):
+        # fwalk works on file descriptors and never follows symlinks, so a link
+        # the MCP server placed in its own folder cannot redirect root's chown.
+        for _root, dirs, files, dirfd in os.fwalk(folder, follow_symlinks=False):
             for name in [*dirs, *files]:
-                os.lchown(os.path.join(root, name), uid, gid)
-        os.chown(folder, uid, gid)
-        os.chmod(folder, 0o700)
+                os.chown(name, uid, gid, dir_fd=dirfd, follow_symlinks=False)
+        os.chown(folder, uid, gid, follow_symlinks=False)
+        os.chmod(folder, 0o700)  # the folder itself belongs to root's tree, not a link
 
 
 def secure_dir(path: Path) -> None:
@@ -566,6 +583,7 @@ class Account:
             self.switched_off_file.unlink(missing_ok=True)  # the switch exists only in webhook mode
         self.switched_off = self.switched_off_file.exists()
         self.mcp: subprocess.Popen | None = None
+        self.removed = False  # set when the account is removed – never start again
         self.pending_mfa: dict = {}
         self.test_result: dict = {}
         self._mcp_failures = 0
@@ -643,6 +661,8 @@ class Account:
     def start_mcp(self) -> None:
         with self.services.lock:
             if self.mcp and self.mcp.poll() is None:
+                return
+            if self.removed:
                 return
             if self.switched_off:
                 log.info("[%s] The MCP server is switched off in Home Assistant", self.display_name())
@@ -933,6 +953,10 @@ class Services:
         return account
 
     def remove_account(self, account: Account) -> None:
+        with self.lock:
+            # Before stopping: a login check or a restart timer running at this
+            # moment must not start the server again (it would hold the port).
+            account.removed = True
         account.stop_mcp()
         account.pending_mfa.clear()
         with self.lock:
@@ -1350,7 +1374,9 @@ def run_connection_test(account: "Account") -> dict:
     else:
         try:
             client = Garmin()
-            client.login(str(account.token_dir))
+            # A private copy: login() may refresh and write the token file, and
+            # root must never write into the folder of the MCP server's user.
+            client.login(read_tokens(account.token_dir))
             add("test_garmin", True, client.full_name or client.display_name or "")
         except Exception as exc:  # noqa: BLE001
             text = str(exc)
@@ -1358,13 +1384,6 @@ def run_connection_test(account: "Account") -> dict:
                 add("test_garmin", False, "@relogin")
             else:
                 add("test_garmin", False, text[:160])
-        finally:
-            # login() may have refreshed the token files as root – hand them
-            # back to the MCP server's user, or it could not update them.
-            try:
-                prepare_mcp_dirs(mcp_identity(account.user), account)
-            except OSError as exc:
-                log.warning("Could not fix token permissions: %s", exc)
 
     # 3. The connector URL works from the internet (round trip via your
     #    public address, exactly like the AI app reaches it)
@@ -1534,6 +1553,7 @@ def finish_mfa(account: "Account", code: str) -> None:
 
 def logout(account: "Account") -> None:
     account.stop_mcp()
+    account.test_result.clear()
     shutil.rmtree(account.token_dir, ignore_errors=True)
     for path in (account.info_file, account.base / "garmin_tokens.b64", account.auth_failed_file):
         path.unlink(missing_ok=True)
@@ -1685,6 +1705,12 @@ def _secret_field(fid: str, value: str, t: dict) -> str:
     )
 
 
+def _confirm(text: str) -> str:
+    """Form attributes for a confirmation question. The text travels in a data
+    attribute, so quotes in a translation can never break the script."""
+    return f'data-confirm="{html.escape(text, quote=True)}" onsubmit="return confirm(this.dataset.confirm)"'
+
+
 def _csrf() -> str:
     return f'<input type="hidden" name="csrf" value="{CSRF_TOKEN}">'
 
@@ -1832,15 +1858,14 @@ async def _account_card(request: Request, lang: str, t: dict, account: "Account"
         '<div class="row">'
         f'<form method="post" action="test" onsubmit="return busy(this)">{csrf}{acc}'
         f'<button type="submit" class="secondary" data-busy="{t["test_busy"]}">{t["test_run"]}</button></form>'
-        f'<form method="post" action="rotate" onsubmit="return confirm(\'{t["rotate_confirm"]}\')">{csrf}{acc}'
+        f'<form method="post" action="rotate" {_confirm(t["rotate_confirm"])}>{csrf}{acc}'
         f'<button type="submit" class="secondary">{t["rotate"]}</button></form>'
         + (
-            f'<form method="post" action="logout" onsubmit="return confirm(\'{t["logout_confirm"]}\')">{csrf}{acc}'
+            f'<form method="post" action="logout" {_confirm(t["logout_confirm"])}>{csrf}{acc}'
             f'<button type="submit" class="secondary">{t["logout"]}</button></form>'
             if account.has_tokens() else ""
         )
-        + f'<form method="post" action="accounts/remove" data-confirm="{html.escape(remove_text, quote=True)}" '
-        f'onsubmit="return confirm(this.dataset.confirm)">{csrf}{acc}'
+        + f'<form method="post" action="accounts/remove" {_confirm(remove_text)}>{csrf}{acc}'
         f'<button type="submit" class="secondary danger">{t["remove_account"]}</button></form></div>'
     )
     parts.append("</div>")
@@ -2232,7 +2257,7 @@ async def tools_page(request: Request) -> Response:
     )
     if selection_file.exists():
         parts.append(
-            f'<form method="post" action="tools/reset" onsubmit="return confirm(\'{t["reset_confirm"]}\')">{csrf}{acc}'
+            f'<form method="post" action="tools/reset" {_confirm(t["reset_confirm"])}>{csrf}{acc}'
             f'<button type="submit" class="secondary">{t["reset"]}</button></form>'
         )
     return _page(request, t, "".join(parts), TOOLS_JS)

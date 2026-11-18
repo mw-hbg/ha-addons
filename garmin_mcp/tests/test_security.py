@@ -32,8 +32,7 @@ def test_mcp_server_gets_no_supervisor_token(monkeypatch):
         return FakeProc()
 
     monkeypatch.setattr(L, "mcp_identity", lambda user="garmin": (4242, 4243))
-    monkeypatch.setattr(L.os, "lchown", lambda *a: None)
-    monkeypatch.setattr(L.os, "chown", lambda *a: None)
+    monkeypatch.setattr(L.os, "chown", lambda *a, **k: None)
 
     monkeypatch.setattr(L.subprocess, "Popen", fake_popen)
     services = L.Services()
@@ -155,13 +154,15 @@ def test_secret_files_are_private():
         assert stat.S_IMODE(os.stat(path).st_mode) == 0o600
 
 
-# --- texts used inside JavaScript confirm('...') must not contain quotes -------------
+# --- confirmation questions: any text (quotes too) stays a question ------------------
 
 def test_confirm_texts_cannot_break_javascript():
-    for code in L.i18n.LANGUAGES:
-        for key, value in L.i18n.ui(code).items():
-            if key.endswith("_confirm"):
-                assert "'" not in value and "\\\\" not in value, (key, value)
+    attrs = L._confirm("L'URL \"secrète\" </form><script>alert(1)</script>")
+    assert attrs.endswith('onsubmit="return confirm(this.dataset.confirm)"')
+    assert "<script>" not in attrs and "'" not in attrs.split("onsubmit")[0].replace("&#x27;", "")
+    assert 'data-confirm="L&#x27;URL &quot;secrète&quot; &lt;/form&gt;' in attrs
+    src = Path(L.__file__).read_text()
+    assert "confirm(\\'" not in src  # no question built into script text any more
     for code in L.i18n.LANGUAGES:
         for key, value in L.i18n.ui(code).items():
             assert "<" not in value or key in ("tools_intro",), key
@@ -427,3 +428,47 @@ def test_switch_only_counts_in_webhook_mode(monkeypatch):
 def test_stand_in_explains_the_switch():
     answer = L.not_ready_answer({"jsonrpc": "2.0", "id": 1, "method": "tools/call"}, "off")
     assert "switched off in Home Assistant" in answer["result"]["content"][0]["text"]
+
+
+# --- root never follows the MCP user's symlinks -----------------------------------------
+
+def test_connection_test_reads_tokens_without_following_links(tmp_path):
+    folder = tmp_path / "tokens"
+    folder.mkdir()
+    target = tmp_path / "secret"
+    target.write_text("x" * 600)
+    (folder / "garmin_tokens.json").symlink_to(target)
+    with pytest.raises(OSError):
+        L.read_tokens(folder)  # planted link: refused, the target is never read
+    (folder / "garmin_tokens.json").unlink()
+    (folder / "garmin_tokens.json").write_text('{"di_token": "' + "t" * 600 + '"}')
+    assert L.read_tokens(folder).startswith('{"di_token"')
+    (folder / "garmin_tokens.json").write_text("{}")
+    with pytest.raises(ValueError):
+        L.read_tokens(folder)  # would be taken for a folder name by garminconnect
+
+
+def test_chown_of_the_mcp_folders_does_not_follow_links(tmp_path, monkeypatch):
+    services = L.Services()
+    account = services.add_account()
+    account.token_dir.mkdir(parents=True, exist_ok=True)
+    outside = tmp_path / "root_only"
+    outside.write_text("secret")
+    os.chown(outside, 0, 0)
+    (account.token_dir / "evil").symlink_to(outside)
+    L.prepare_mcp_dirs((4321, 4321), account)
+    assert os.stat(outside).st_uid == 0  # the target stays root's
+    assert os.lstat(account.token_dir / "evil").st_uid == 4321
+    assert os.stat(account.token_dir).st_uid == 4321
+
+
+def test_removed_account_is_never_started_again(monkeypatch):
+    services = L.Services()
+    account = services.add_account()
+    started = []
+    monkeypatch.setattr(L.Account, "has_tokens", lambda self: True)
+    monkeypatch.setattr(L.subprocess, "Popen", lambda *a, **k: started.append(a) or None)
+    monkeypatch.setattr(L, "prepare_mcp_dirs", lambda *a, **k: None)
+    services.remove_account(account)
+    account.start_mcp()  # e.g. a restart timer or login check still running
+    assert started == [] and account.id not in services.accounts

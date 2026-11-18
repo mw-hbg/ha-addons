@@ -129,8 +129,7 @@ def test_each_server_gets_only_its_own_account(monkeypatch):
 
     monkeypatch.setattr(L.subprocess, "Popen", lambda cmd, env=None, cwd=None, **kw: captured.append((env, kw)) or FakeProc())
     monkeypatch.setattr(L, "mcp_identity", lambda user="garmin": (5000 + int(user[6:] or 1), 6000))
-    monkeypatch.setattr(L.os, "lchown", lambda *a: None)
-    monkeypatch.setattr(L.os, "chown", lambda *a: None)
+    monkeypatch.setattr(L.os, "chown", lambda *a, **k: None)
     services = L.Services()
     second = services.add_account()
     second.token_dir.mkdir(parents=True, exist_ok=True)

@@ -18,8 +18,11 @@ already use for Home Assistant.
 
 * Login with two-factor authentication in the Home Assistant UI; your password is never stored.
 * You decide what the AI may do: read only, create without deleting, or full access.
+* Several Garmin accounts (up to 10, e.g. the whole household) – each with its own login,
+  connector URL and rights – and an on/off switch per account in Home Assistant.
 * Security first: no access to the Home Assistant API, AppArmor profile, the
-  internet-facing server runs unprivileged and sandboxed.
+  internet-facing server runs as an unprivileged user and its file tools only reach its
+  download folder.
 * English and German; more languages can be added without code.
 
 > **Unofficial** – not affiliated with Garmin. **Experimental** until version 1.0.
@@ -57,8 +60,12 @@ nutzt.
 
 * Anmeldung inkl. Zwei-Faktor-Authentifizierung in Home Assistant; dein Passwort wird nie gespeichert.
 * Du bestimmst, was die KI darf: nur lesen, anlegen ohne löschen oder alles.
+* Mehrere Garmin-Konten (bis zu 10, z. B. der ganze Haushalt) – jedes mit eigener
+  Anmeldung, Connector-URL und eigenen Rechten – und ein Ein/Aus-Schalter pro Konto in
+  Home Assistant.
 * Sicherheit zuerst: kein Zugriff auf die Home-Assistant-API, AppArmor-Profil, der
-  aus dem Internet erreichbare Server läuft eingeschränkt und abgeschottet.
+  aus dem Internet erreichbare Server läuft als eingeschränkter Benutzer, seine
+  Datei-Tools erreichen nur seinen Download-Ordner.
 * Deutsch und Englisch; weitere Sprachen ohne Code ergänzbar.
 
 > **Inoffiziell** – keine Verbindung zu Garmin. **Experimentell** bis Version 1.0.

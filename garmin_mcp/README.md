@@ -108,6 +108,9 @@ app's *Documentation* tab).
   integration's own folder there. The MCP
   server – the only part reachable from the internet – runs as an unprivileged user (and,
   where the kernel offers Linux Landlock, locks itself into its own folders).
+* **Several accounts:** every Home Assistant administrator can open the app page and
+  therefore sees and manages all accounts, including their connector URLs. Only add
+  accounts of people who trust your administrators.
 
 Details: *Security* in [DOCS.md](DOCS.md). Found a vulnerability? Please report it
 privately – see [SECURITY.md](../SECURITY.md).
@@ -337,6 +340,9 @@ App; der deutsche Teil steht dort nach dem englischen (ganz oben auf „Deutsch�
   AppArmor-Profil erlaubt dort nur den Ordner der Hilfs-Integration. Der MCP-Server – der einzige von außen
   erreichbare Teil – läuft als eingeschränkter Benutzer (und sperrt sich, wo der Kernel
   Linux-Landlock anbietet, zusätzlich in seine eigenen Ordner ein).
+* **Mehrere Konten:** Jeder Administrator in Home Assistant kann die App-Seite öffnen und
+  sieht und verwaltet damit alle Konten – auch ihre Connector-URLs. Nimm nur Konten von
+  Personen auf, die deinen Administratoren vertrauen.
 
 Details: *Sicherheit* in [DOCS.md](DOCS.md#deutsch). Eine Sicherheitslücke gefunden? Bitte
 vertraulich melden – siehe [SECURITY.md](../SECURITY.md).

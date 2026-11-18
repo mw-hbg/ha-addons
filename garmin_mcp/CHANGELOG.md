@@ -1,5 +1,31 @@
 # Changelog
 
+## Unreleased
+
+- Security: the connection test no longer lets the app's internal part (root) write into
+  the folder of the MCP server's user – it reads the Garmin tokens from a private copy and
+  never follows links placed there. Handing the folders to that user no longer follows
+  links either.
+- Fixed: a server could in rare cases start again right after its account was removed
+  (and then block the port for the next account).
+- Improved: confirmation questions can no longer be skipped by a quote in a translation;
+  logging out clears the last connection test.
+- Docs: several accounts and the switch in the README, note for administrators, switch
+  name with a single account, honest note on the servers of several accounts.
+
+---
+
+- Sicherheit: Der Verbindungstest lässt den internen Teil der App (root) nicht mehr in den
+  Ordner des Benutzers des MCP-Servers schreiben – er liest die Garmin-Tokens aus einer
+  privaten Kopie und folgt dort nie Verknüpfungen. Auch das Übergeben der Ordner an diesen
+  Benutzer folgt keinen Verknüpfungen mehr.
+- Behoben: Ein Server konnte in seltenen Fällen direkt nach dem Entfernen seines Kontos
+  wieder starten (und dann den Port für das nächste Konto blockieren).
+- Verbessert: Bestätigungsfragen lassen sich nicht mehr durch ein Anführungszeichen in
+  einer Übersetzung überspringen; Abmelden löscht das letzte Testergebnis.
+- Doku: mehrere Konten und Schalter in der README, Hinweis für Administratoren,
+  Schaltername bei nur einem Konto, ehrlicher Hinweis zu den Servern mehrerer Konten.
+
 ## 0.6.1
 
 - Improved: names only from the second account on – with a single account the app page

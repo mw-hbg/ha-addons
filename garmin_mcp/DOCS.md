@@ -82,7 +82,7 @@ the restart. After the restart Home Assistant sets the integration up by itself
 (the app announces its settings through Home Assistant's official app discovery) and
 the status changes to **Active** – nothing else to set up. When a later app update
 brings a new version of the helper integration, Home Assistant shows a **repair
-notice** (*Settings → Repairs*) with a button to restart, just like HACS does.
+notice** (*Settings → Repairs*) with a button to restart, just like the Marketplace does.
 
 Requirement: Home Assistant must already be reachable from the internet over
 HTTPS (Nabu Casa, Cloudflare Tunnel, reverse proxy, …). The app uses the
@@ -203,7 +203,8 @@ Home Assistant language:
 ### Switching the server off
 
 The helper integration adds a device **Garmin Connect MCP <name>** per Garmin account,
-each with the switch **Garmin Connect MCP <name> Server** (webhook mode only). Turn it
+each with the switch **Garmin Connect MCP <name> Server** (webhook mode only; with a single
+account without a name: *Garmin Connect MCP Server*, `switch.garmin_connect_mcp_server`). Turn it
 off and no AI app can reach the Garmin data of this account any more: Home Assistant answers every request itself with "switched
 off" – nothing is forwarded to the app – and the app stops its Garmin server. Login,
 settings and connector URL stay; turn the switch on and everything works again within
@@ -607,7 +608,7 @@ Integration selbst ein (die App meldet ihre Einstellungen über die offizielle
 App-Erkennung von Home Assistant), und der Status steht auf **Aktiv** – sonst ist nichts
 einzurichten. Bringt ein späteres App-Update eine neue Version der Hilfs-Integration mit,
 zeigt Home Assistant einen **Reparatur-Hinweis** (*Einstellungen → Reparaturen*) mit Knopf
-zum Neustarten – wie bei HACS.
+zum Neustarten – wie beim Marketplace.
 
 Voraussetzung: Home Assistant ist bereits per HTTPS aus dem Internet erreichbar (Nabu
 Casa, Cloudflare-Tunnel, Reverse Proxy …). Die App nimmt die externe Adresse aus
@@ -732,7 +733,8 @@ in der Sprache von Home Assistant:
 ### Server ausschalten
 
 Die Hilfs-Integration legt pro Garmin-Konto ein Gerät **Garmin Connect MCP <Name>** mit
-dem Schalter **Garmin Connect MCP <Name> Server** an (nur im Modus webhook). Ist er aus,
+dem Schalter **Garmin Connect MCP <Name> Server** an (nur im Modus webhook; mit nur einem
+Konto ohne Namen: *Garmin Connect MCP Server*, `switch.garmin_connect_mcp_server`). Ist er aus,
 erreicht keine KI-App mehr die Garmin-Daten dieses Kontos: Home Assistant beantwortet jede Anfrage selbst mit
 „ausgeschaltet“ – nichts wird an die App weitergeleitet – und die App stoppt ihren
 Garmin-Server. Anmeldung, Einstellungen und Connector-URL bleiben; Schalter wieder an,
