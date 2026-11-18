@@ -454,12 +454,16 @@ def test_chown_of_the_mcp_folders_does_not_follow_links(tmp_path, monkeypatch):
     account.token_dir.mkdir(parents=True, exist_ok=True)
     outside = tmp_path / "root_only"
     outside.write_text("secret")
-    os.chown(outside, 0, 0)
     (account.token_dir / "evil").symlink_to(outside)
+    calls = []
+    # recorded instead of done: the tests do not run as root everywhere
+    monkeypatch.setattr(L.os, "chown", lambda path, uid, gid, **kw: calls.append((str(path), kw)))
     L.prepare_mcp_dirs((4321, 4321), account)
-    assert os.stat(outside).st_uid == 0  # the target stays root's
-    assert os.lstat(account.token_dir / "evil").st_uid == 4321
-    assert os.stat(account.token_dir).st_uid == 4321
+    assert calls and all(kw.get("follow_symlinks") is False for _path, kw in calls)
+    assert ("evil", {"dir_fd": calls[0][1].get("dir_fd"), "follow_symlinks": False}) in calls or any(
+        path == "evil" and kw.get("dir_fd") is not None for path, kw in calls
+    )
+    assert not any(str(outside) in path for path, _kw in calls)
 
 
 def test_removed_account_is_never_started_again(monkeypatch):
