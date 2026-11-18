@@ -6,6 +6,7 @@
 [![Test](https://github.com/mw-hbg/ha-garmin-mcp/actions/workflows/build.yaml/badge.svg)](https://github.com/mw-hbg/ha-garmin-mcp/actions/workflows/build.yaml)
 [![Release](https://img.shields.io/github/v/release/mw-hbg/ha-garmin-mcp?label=release)](https://github.com/mw-hbg/ha-garmin-mcp/releases)
 ![Stage: experimental](https://img.shields.io/badge/stage-experimental-orange)
+[![Ko-fi](https://img.shields.io/badge/Ko--fi-mwhbg-FF5E5B?logo=ko-fi&logoColor=white)](https://ko-fi.com/mwhbg)
 
 ## English
 
@@ -33,6 +34,12 @@ already use for Home Assistant.
 > `mw-hbg/ha-addons`). If you added an old address, **keep it** – it forwards and
 > updates keep arriving. Adding the new address in addition would make Home Assistant
 > treat it as a different app (new Garmin login and connector URL).
+
+### Support
+
+Everything I build is free and stays free. If this project is useful to you, you're welcome to buy me a coffee – entirely voluntary, nothing in return, just a thank-you that keeps me motivated. ☕ Note: payments to a private person are not tax-deductible donations.
+
+[![Ko-fi](https://img.shields.io/badge/Ko--fi-Buy_me_a_coffee-FF5E5B?logo=ko-fi&logoColor=white)](https://ko-fi.com/mwhbg)
 
 **Help:** [issues](https://github.com/mw-hbg/ha-garmin-mcp/issues) · security
 problems please privately, see [SECURITY.md](SECURITY.md) ·
@@ -66,6 +73,12 @@ eintragen, dann **Garmin Connect MCP** installieren. Schritt für Schritt:
 > `mw-hbg/ha-addons`). Eine alte Adresse **einfach stehen lassen** – sie wird
 > weitergeleitet, Updates kommen weiter an. Die neue Adresse zusätzlich einzutragen,
 > würde Home Assistant als andere App sehen (neue Garmin-Anmeldung und Connector-URL).
+
+### Unterstützen
+
+Alles, was ich baue, ist kostenlos und bleibt es auch. Wenn dir dieses Projekt nützt, kannst du mir gern einen Kaffee ausgeben – völlig freiwillig und ohne Gegenleistung, einfach als Dankeschön, das motiviert. ☕ Hinweis: Zahlungen an eine Privatperson sind keine steuerlich absetzbaren Spenden.
+
+[![Ko-fi](https://img.shields.io/badge/Ko--fi-Kaffee_ausgeben-FF5E5B?logo=ko-fi&logoColor=white)](https://ko-fi.com/mwhbg)
 
 **Hilfe:** [Issues](https://github.com/mw-hbg/ha-garmin-mcp/issues) ·
 Sicherheitsprobleme bitte vertraulich, siehe [SECURITY.md](SECURITY.md) ·
