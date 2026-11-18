@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.6.1
 
 - Improved: names only from the second account on – with a single account the app page
   and Home Assistant show no name (device again “Garmin Connect MCP”).
