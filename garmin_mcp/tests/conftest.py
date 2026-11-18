@@ -19,3 +19,18 @@ os.environ["HA_CONFIG_DIR"] = str(_tmp / "homeassistant")
 sys.path.insert(0, str(APP))
 sys.path.insert(0, str(Path(__file__).resolve().parent / "hastub"))
 sys.path.insert(0, str(APP / "integration"))
+
+
+import pytest  # noqa: E402
+
+
+@pytest.fixture(autouse=True)
+def _fresh_accounts():
+    """Every test starts with the layout of a fresh install (one account)."""
+    import shutil
+
+    data = _tmp / "data"
+    for name in ("accounts.json", "report_secret"):
+        (data / name).unlink(missing_ok=True)
+    shutil.rmtree(data / "accounts", ignore_errors=True)
+    yield

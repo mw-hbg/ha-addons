@@ -146,17 +146,18 @@ def test_cleanup_never_follows_symlinks(tmp_path, monkeypatch):
 # --- login state for the helper integration --------------------------------------------
 
 def test_login_status_and_notification_switch(monkeypatch):
-    monkeypatch.setattr(L, "has_tokens", lambda: True)
     services = L.Services()
-    monkeypatch.setattr(services, "mcp_state", lambda: "failed")
-    services._login_failures = 1
-    assert services.login_status() == "starting"  # first failure: retry quietly
-    services._login_failures = 2
-    assert services.login_status() == "failed"
-    monkeypatch.setattr(services, "mcp_state", lambda: "ready")
-    assert services.login_status() == "ok"
-    monkeypatch.setattr(L, "has_tokens", lambda: False)
-    assert services.login_status() == "logged_out"
+    account = services.primary
+    monkeypatch.setattr(account, "has_tokens", lambda: True)
+    monkeypatch.setattr(account, "mcp_state", lambda: "failed")
+    account._login_failures = 1
+    assert account.login_status() == "starting"  # first failure: retry quietly
+    account._login_failures = 2
+    assert account.login_status() == "failed"
+    monkeypatch.setattr(account, "mcp_state", lambda: "ready")
+    assert account.login_status() == "ok"
+    monkeypatch.setattr(account, "has_tokens", lambda: False)
+    assert account.login_status() == "logged_out"
     services.options = opts(login_notification=False)
     remote = L.RemoteAccess(services)
     assert remote.receive_report({})["notify"] is False

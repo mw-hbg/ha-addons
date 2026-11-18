@@ -19,8 +19,8 @@
       }
     },
     "garmin_login": {
-      "title": "Garmin Connect MCP: Garmin-Anmeldung nicht mehr gültig",
-      "description": "Die Anmeldung der App Garmin Connect MCP bei Garmin Connect ist nicht mehr gültig – dein KI-Assistent kann nicht auf deine Garmin-Daten zugreifen. Öffne **Garmin MCP** in der Seitenleiste und melde dich neu an. Dieser Hinweis verschwindet danach von selbst."
+      "title": "Garmin Connect MCP: Garmin-Anmeldung von {name} nicht mehr gültig",
+      "description": "Die Garmin-Connect-Anmeldung des Kontos **{name}** in der App Garmin Connect MCP ist nicht mehr gültig – der KI-Assistent kann nicht auf dessen Garmin-Daten zugreifen. Öffne **Garmin MCP** in der Seitenleiste und melde dich in der Karte dieses Kontos neu an. Dieser Hinweis verschwindet danach von selbst."
     }
   },
   "removal": {

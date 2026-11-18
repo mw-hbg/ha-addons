@@ -28,8 +28,10 @@ without any additional service in between.
   or full access – plus per-tool allow/deny lists.
 * **No extra remote setup:** reachable through the address you already use for
   Home Assistant (Nabu Casa, Cloudflare Tunnel, reverse proxy …) via a webhook.
-* **On/off switch in Home Assistant** – a normal switch entity, also for automations:
-  off means no AI app reaches your data; login and connector URL stay.
+* **Several Garmin accounts** (up to 10, e.g. the whole household) – each with its own
+  login, connector URL, rights and switch.
+* **On/off switch in Home Assistant** per account – a normal switch entity, also for
+  automations: off means no AI app reaches that data; login and connector URL stay.
 * **Connection test** with one click – server, Garmin login and connector URL
   from the internet.
 * **Repair notices** in Home Assistant when the Garmin login expired or an update of the
@@ -251,8 +253,10 @@ von Garmin zu deinem KI-Assistenten.
   oder voller Zugriff – plus Freigabe- und Sperrlisten für einzelne Tools.
 * **Kein zusätzlicher Fernzugriff nötig:** erreichbar über die Adresse, mit der du
   Home Assistant ohnehin von außen nutzt – per Webhook.
-* **Ein/Aus-Schalter in Home Assistant** – eine normale Schalter-Entität, auch für
-  Automationen: aus heißt, keine KI-App erreicht deine Daten; Anmeldung und
+* **Mehrere Garmin-Konten** (bis zu 10, z. B. der ganze Haushalt) – jedes mit eigener
+  Anmeldung, Connector-URL, eigenen Rechten und eigenem Schalter.
+* **Ein/Aus-Schalter in Home Assistant** pro Konto – eine normale Schalter-Entität, auch
+  für Automationen: aus heißt, keine KI-App erreicht diese Daten; Anmeldung und
   Connector-URL bleiben.
 * **Verbindungstest** per Klick – Server, Garmin-Anmeldung und Connector-URL
   aus dem Internet.

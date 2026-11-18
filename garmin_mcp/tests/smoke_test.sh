@@ -130,6 +130,38 @@ except PermissionError:
 import garmin_mcp  # the server itself still loads
 "
 
+echo "3b2. A second Garmin account: own user, no access to the first account's tokens"
+second=$(docker exec app-smoke python3 -c "
+import sys; sys.path.insert(0, '/app')
+import launcher as L
+svc = L.Services()
+acc = svc.add_account()
+ident = L.mcp_identity(acc.user)
+assert ident and ident != L.mcp_identity(), 'second account has no user of its own'
+L.prepare_mcp_dirs(ident, acc)
+print(acc.user, acc.token_dir)
+")
+read -r user2 tokens2 <<< "$second"
+echo "   $user2 -> $tokens2"
+docker exec -u "$user2" app-smoke python3 -c "
+import os, sys
+open(sys.argv[1] + '/ok.txt', 'w').write('x'); os.remove(sys.argv[1] + '/ok.txt')
+for path in ('/data/garmin_tokens', '/data/secret_path', '/data/accounts'):
+    try:
+        os.listdir(path) if os.path.isdir(path) else open(path).read()
+    except PermissionError:
+        continue
+    raise SystemExit(f'second account could read {path}')
+" "$tokens2"
+docker exec -u garmin app-smoke python3 -c "
+import os, sys
+try:
+    os.listdir(sys.argv[1])
+    raise SystemExit('first account could read the tokens of the second')
+except PermissionError:
+    pass
+" "$tokens2"
+
 echo "3c. Landlock: the MCP server reaches only its own folders"
 docker exec -u garmin -e GARMINTOKENS=/data/garmin_tokens -e HOME=/data/mcp_home -e GARMIN_FIT_DOWNLOAD_DIR=/data/downloads -w /data/downloads app-smoke python3 -c "
 import sys; sys.path.insert(0, '/app')

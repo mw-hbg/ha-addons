@@ -1,20 +1,21 @@
 """Remote access for the Garmin Connect MCP app via a Home Assistant webhook.
 
-The app announces its settings (random webhook id and its internal MCP
-address) through the Supervisor's discovery service; Home Assistant creates
-the config entry from it (see config_flow.py). This integration registers the
-webhook, so MCP clients can reach the app through Home Assistant's existing
-external address (Nabu Casa, Cloudflare Tunnel, reverse proxy, …):
+The app announces its settings (per Garmin account a random webhook id and
+its internal MCP address) through the Supervisor's discovery service; Home
+Assistant creates the config entry from it (see config_flow.py). This
+integration registers one webhook per account, so MCP clients can reach the
+app through Home Assistant's existing external address (Nabu Casa, Cloudflare
+Tunnel, reverse proxy, …):
 
-    https://<your-home-assistant>/api/webhook/<webhook id>
+    https://<your-home-assistant>/api/webhook/<webhook id of the account>
 
 Requests are forwarded unchanged to the app; responses (JSON or
 Server-Sent Events) are streamed back. Nothing is stored and nothing is logged
 except errors – the webhook id is never written to the log.
 
-The switch "Garmin Connect MCP Server" (switch.py) turns the MCP server off
-and on: while it is off, the webhook answers MCP requests itself and the app
-stops its Garmin server.
+Every account is a device with a switch "Garmin Connect MCP <name> Server"
+(switch.py): while it is off, the account's webhook answers MCP requests
+itself and the app stops that account's Garmin server.
 
 The app itself has no access to the Home Assistant API. Everything the app
 page needs to know (external address, language, loaded version) is reported
@@ -39,6 +40,7 @@ from homeassistant.components.webhook import (
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
 from homeassistant.exceptions import ConfigEntryNotReady
+from homeassistant.helpers import device_registry as dr
 from homeassistant.helpers import issue_registry as ir
 from homeassistant.helpers.event import async_track_time_interval
 
@@ -88,11 +90,30 @@ def _external_url(hass: HomeAssistant) -> str:
         return ""
 
 
+def entry_accounts(entry: ConfigEntry) -> list[dict]:
+    """Accounts of the entry; entries made by app versions with a single
+    account (before 0.6) have webhook_id/target_url at the top level."""
+    accounts = entry.data.get("accounts")
+    if isinstance(accounts, list):
+        return [a for a in accounts if isinstance(a, dict) and a.get("webhook_id") and a.get("target_url")]
+    if entry.data.get("webhook_id") and entry.data.get("target_url"):
+        return [{"id": "1", "name": "", "webhook_id": entry.data["webhook_id"], "target_url": entry.data["target_url"]}]
+    return []
+
+
+def login_issue_id(account_id: str) -> str:
+    return f"{ISSUE_LOGIN}_{account_id}"
+
+
+def device_identifier(entry: ConfigEntry, account_id: str) -> tuple[str, str]:
+    """Account 1 keeps the device of the versions with a single account."""
+    return (DOMAIN, entry.entry_id if account_id == "1" else f"{entry.entry_id}_{account_id}")
+
+
 async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
-    webhook_id = entry.data.get("webhook_id")
-    target_url = entry.data.get("target_url")
+    accounts = entry_accounts(entry)
     report_url = entry.data.get("report_url")
-    if not webhook_id or not target_url:
+    if not accounts and not report_url:
         raise ConfigEntryNotReady("Waiting for the Garmin Connect MCP app to announce its settings")
 
     session = aiohttp.ClientSession(
@@ -100,23 +121,36 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         timeout=aiohttp.ClientTimeout(connect=30, sock_connect=10, sock_read=300),
         auto_decompress=False,
     )
+    runtime: dict = {"session": session, "accounts": {}}
 
-    runtime: dict = {"webhook_id": webhook_id, "session": session, "enabled": True}
+    for account in accounts:
+        account_runtime = {
+            "id": account["id"],
+            "name": account.get("name", ""),
+            "webhook_id": account["webhook_id"],
+            "enabled": True,
+        }
+        runtime["accounts"][account["id"]] = account_runtime
 
-    async def handle(hass: HomeAssistant, wid: str, request: web.Request):
-        if not runtime["enabled"]:
-            return await _switched_off(request)
-        return await _forward(request, session, target_url)
+        def _handler(acc: dict, target_url: str):
+            async def handle(hass: HomeAssistant, wid: str, request: web.Request):
+                if not acc["enabled"]:
+                    return await _switched_off(request)
+                return await _forward(request, session, target_url)
 
-    webhook_register(
-        hass,
-        DOMAIN,
-        "Garmin Connect MCP",
-        webhook_id,
-        handle,
-        allowed_methods=["POST", "GET"],
-    )
+            return handle
+
+        webhook_register(
+            hass,
+            DOMAIN,
+            f"Garmin Connect MCP {account.get('name') or account['id']}",
+            account["webhook_id"],
+            _handler(account_runtime, account["target_url"]),
+            allowed_methods=["POST", "GET"],
+        )
     hass.data.setdefault(DOMAIN, {})[entry.entry_id] = runtime
+    # notice of the versions with a single account
+    ir.async_delete_issue(hass, DOMAIN, ISSUE_LOGIN)
 
     # The app replaces these files when it brings a newer version. Python
     # only loads the new code after a restart, so raise a fixable repair
@@ -144,7 +178,8 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
             )
 
     async def _report(_now=None) -> None:
-        """Tell the app how Home Assistant sees it; show its Garmin login state."""
+        """Tell the app how Home Assistant sees it and the switch of every
+        account; show the Garmin login state of every account."""
         if not report_url:
             return
         payload = {
@@ -152,7 +187,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
             "language": hass.config.language,
             "integration_version": loaded_version,
             "restart_needed": state["restart_needed"],
-            "mcp_enabled": runtime["enabled"],
+            "accounts": {acc_id: {"mcp_enabled": acc["enabled"]} for acc_id, acc in runtime["accounts"].items()},
         }
         try:
             async with session.post(report_url, json=payload, timeout=aiohttp.ClientTimeout(total=15)) as resp:
@@ -160,25 +195,36 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
                     return
                 answer = await resp.json(content_type=None)
         except (aiohttp.ClientError, asyncio.TimeoutError, ValueError):
-            return  # app stopped or restarting – keep the current notice
+            return  # app stopped or restarting – keep the current notices
         if not isinstance(answer, dict):
             return
-        if answer.get("login") == "failed" and answer.get("notify", True):
-            ir.async_create_issue(
-                hass,
-                DOMAIN,
-                ISSUE_LOGIN,
-                is_fixable=False,
-                is_persistent=False,
-                severity=ir.IssueSeverity.WARNING,
-                translation_key=ISSUE_LOGIN,
-            )
-        elif answer.get("login") in ("ok", "failed", "logged_out"):
-            ir.async_delete_issue(hass, DOMAIN, ISSUE_LOGIN)
+        logins = answer.get("accounts")
+        if not isinstance(logins, dict):  # app before 0.6: one account
+            logins = {"1": {"login": answer.get("login")}}
+        notify = answer.get("notify", True)
+        for acc_id, acc in runtime["accounts"].items():
+            info = logins.get(acc_id)
+            if not isinstance(info, dict):
+                continue
+            name = str(info.get("name") or acc.get("name") or acc_id)[:60]
+            if info.get("login") == "failed" and notify:
+                ir.async_create_issue(
+                    hass,
+                    DOMAIN,
+                    login_issue_id(acc_id),
+                    is_fixable=False,
+                    is_persistent=False,
+                    severity=ir.IssueSeverity.WARNING,
+                    translation_key=ISSUE_LOGIN,
+                    translation_placeholders={"name": name},
+                )
+            elif info.get("login") in ("ok", "failed", "logged_out"):
+                ir.async_delete_issue(hass, DOMAIN, login_issue_id(acc_id))
 
     runtime["report"] = _report
-    # The switch restores its state here – before the first report to the app.
+    # The switches restore their state here – before the first report to the app.
     await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
+    _remove_stale_devices(hass, entry, set(runtime["accounts"]))
 
     entry.async_on_unload(async_track_time_interval(hass, _check_update, timedelta(minutes=1)))
     entry.async_on_unload(async_track_time_interval(hass, _report, REPORT_INTERVAL))
@@ -188,8 +234,17 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     # Remove ourselves once the app has been uninstalled (see cleanup.py).
     async_watch_app(hass, entry, entry.data.get("app_slug"))
 
-    _LOGGER.info("Garmin Connect MCP remote access enabled")
+    _LOGGER.info("Garmin Connect MCP remote access enabled (%d account(s))", len(accounts))
     return True
+
+
+def _remove_stale_devices(hass: HomeAssistant, entry: ConfigEntry, account_ids: set[str]) -> None:
+    """Devices (and their switches) of accounts that were removed in the app."""
+    registry = dr.async_get(hass)
+    wanted = {device_identifier(entry, acc_id) for acc_id in account_ids}
+    for device in dr.async_entries_for_config_entry(registry, entry.entry_id):
+        if not device.identifiers & wanted:
+            registry.async_update_device(device.id, remove_config_entry_id=entry.entry_id)
 
 
 async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
@@ -197,7 +252,8 @@ async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         return False
     data = hass.data.get(DOMAIN, {}).pop(entry.entry_id, None)
     if data:
-        webhook_unregister(hass, data["webhook_id"])
+        for account in data["accounts"].values():
+            webhook_unregister(hass, account["webhook_id"])
         await data["session"].close()
     return True
 
@@ -210,6 +266,8 @@ async def async_remove_entry(hass: HomeAssistant, entry: ConfigEntry) -> None:
     so check again a few times before giving up (the app removes the files
     itself in direct mode)."""
     ir.async_delete_issue(hass, DOMAIN, ISSUE_LOGIN)
+    for account in entry_accounts(entry):
+        ir.async_delete_issue(hass, DOMAIN, login_issue_id(account["id"]))
     app_slug = entry.data.get("app_slug")
 
     async def _check_later() -> None:
@@ -225,8 +283,9 @@ async def async_remove_entry(hass: HomeAssistant, entry: ConfigEntry) -> None:
 
 
 SWITCHED_OFF_TEXT = (
-    "The Garmin Connect MCP server is switched off in Home Assistant. Ask the user to turn on "
-    "the switch 'Garmin Connect MCP Server' in Home Assistant, then try again."
+    "The Garmin Connect MCP server of this Garmin account is switched off in Home Assistant. "
+    "Ask the user to turn on its switch ('Garmin Connect MCP … Server') in Home Assistant, then "
+    "try again."
 )
 
 

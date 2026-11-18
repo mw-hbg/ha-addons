@@ -129,6 +129,42 @@ GOOD = {
 }
 
 
+MULTI = {
+    "accounts": [
+        {"id": "1", "name": "Moritz", "webhook_id": GOOD["webhook_id"], "target_url": GOOD["target_url"]},
+        {"id": "2", "name": "Belinda", "webhook_id": "garmin_mcp_" + "v" * 43, "target_url": f"http://172.30.33.5:8100/{'b' * 43}/mcp"},
+    ],
+    "report_url": GOOD["report_url"],
+    "app_slug": GOOD["app_slug"],
+}
+
+
+@pytest.mark.parametrize(
+    "accounts",
+    [
+        [{**MULTI["accounts"][0], "id": "x"}],                      # odd id
+        [MULTI["accounts"][0], MULTI["accounts"][0]],                # same account twice
+        [{**MULTI["accounts"][1], "target_url": "http://evil/x"}],   # not an internal address
+        [{**MULTI["accounts"][1], "webhook_id": "short"}],
+        ["not a dict"],
+        [MULTI["accounts"][0]] * 11,                                 # more than 10
+    ],
+)
+def test_invalid_account_lists_are_refused(accounts):
+    from garmin_mcp_webhook.config_flow import entry_data
+
+    assert entry_data(MULTI, "abcd1234_garmin_mcp") is not None
+    assert entry_data({**MULTI, "accounts": accounts}, "abcd1234_garmin_mcp") is None
+
+
+def test_account_names_are_cleaned():
+    from garmin_mcp_webhook.config_flow import entry_data
+
+    raw = {**MULTI, "accounts": [{**MULTI["accounts"][0], "name": "  Bel\ninda\x00 " + "x" * 100}]}
+    name = entry_data(raw, "abcd1234_garmin_mcp")["accounts"][0]["name"]
+    assert name.startswith("Belinda x") and "\x00" not in name and len(name) <= 60
+
+
 def _flow(hass):
     from garmin_mcp_webhook.config_flow import GarminMcpWebhookConfigFlow
 
@@ -168,14 +204,20 @@ def test_discovery_creates_updates_and_replaces_the_entry():
         # an entry of an older app version (set up by hand / API)
         hass.config_entries.entries.append(ConfigEntry("old", {}, source="user", unique_id="garmin_mcp_webhook"))
         result = await run_flow_step(_flow(hass), "async_step_hassio", _discovery(GOOD))
-        assert result["type"] == "create_entry" and result["data"] == GOOD
+        # an announcement of an app with a single account becomes account 1
+        assert result["type"] == "create_entry"
+        assert result["data"] == {
+            "accounts": [{"id": "1", "name": "", "webhook_id": GOOD["webhook_id"], "target_url": GOOD["target_url"]}],
+            "report_url": GOOD["report_url"],
+            "app_slug": GOOD["app_slug"],
+        }
         assert hass.config_entries.removed == ["old"]
         assert [e.unique_id for e in hass.config_entries.entries] == ["u1"]
-        # same announcement with a new secret: entry updated and reloaded, no second entry
-        new = {**GOOD, "target_url": GOOD["target_url"].replace(SECRET, "t" * 43)}
-        result = await run_flow_step(_flow(hass), "async_step_hassio", _discovery(new))
+        # same announcement with a second account: entry updated and reloaded, no second entry
+        result = await run_flow_step(_flow(hass), "async_step_hassio", _discovery(MULTI))
         assert result == {"type": "abort", "reason": "already_configured"}
-        assert hass.config_entries.entries[0].data == new and hass.config_entries.reloaded
+        data = hass.config_entries.entries[0].data
+        assert [a["name"] for a in data["accounts"]] == ["Moritz", "Belinda"] and hass.config_entries.reloaded
         # junk is refused
         result = await run_flow_step(_flow(hass), "async_step_hassio", _discovery({"target_url": "x"}, "u2"))
         assert result["reason"] == "invalid_discovery"
@@ -213,11 +255,71 @@ def test_reports_to_the_app_and_shows_login_problems(monkeypatch):
             await integration.async_setup_entry(hass, entry)
             await asyncio.gather(*hass.tasks)
             assert seen[0]["external_url"] == "https://home.example.com" and seen[0]["language"] == "de"
-            assert ("garmin_mcp_webhook", "garmin_login") in issue_registry.ISSUES
+            # an app with a single account answers without "accounts" -> account 1
+            assert ("garmin_mcp_webhook", "garmin_login_1") in issue_registry.ISSUES
             await timers[1]()  # next report: login fine again
-            assert ("garmin_mcp_webhook", "garmin_login") not in issue_registry.ISSUES
+            assert ("garmin_mcp_webhook", "garmin_login_1") not in issue_registry.ISSUES
         finally:
             await integration.async_unload_entry(hass, entry)
+            await runner.cleanup()
+
+    asyncio.run(run())
+
+
+def test_several_accounts_get_webhooks_switches_and_notices(monkeypatch):
+    from homeassistant.helpers import device_registry
+
+    async def run():
+        seen = []
+
+        async def fake_report(request):
+            seen.append(await request.json())
+            return web.json_response({
+                "accounts": {
+                    "1": {"name": "Moritz", "login": "ok"},
+                    "2": {"name": "Belinda", "login": "failed"},
+                },
+                "notify": True,
+            })
+
+        app_server = web.Application()
+        app_server.router.add_post("/key/ha", fake_report)
+        runner = web.AppRunner(app_server)
+        await runner.setup()
+        await web.TCPSite(runner, "127.0.0.1", 18129).start()
+        monkeypatch.setattr(integration, "async_track_time_interval", lambda h, action, i: lambda: None)
+        hass = HomeAssistant()
+        data = {
+            "accounts": [
+                {"id": "1", "name": "Moritz", "webhook_id": "wh_m", "target_url": "http://127.0.0.1:1/a/mcp"},
+                {"id": "2", "name": "Belinda", "webhook_id": "wh_b", "target_url": "http://127.0.0.1:1/b/mcp"},
+            ],
+            "report_url": "http://127.0.0.1:18129/key/ha",
+            "app_slug": "abcd1234_garmin_mcp",
+        }
+        entry = ConfigEntry("multi", data)
+        # a device of an account that was removed in the app meanwhile
+        stale = device_registry.REGISTRY.add("multi", {("garmin_mcp_webhook", "multi_7")})
+        kept = device_registry.REGISTRY.add("multi", {("garmin_mcp_webhook", "multi")})
+        try:
+            await integration.async_setup_entry(hass, entry)
+            await asyncio.gather(*hass.tasks)
+            assert {"wh_m", "wh_b"} <= set(REGISTERED)
+            switches = hass.config_entries.entities
+            assert [s._attr_unique_id for s in switches] == ["multi_mcp_server", "multi_2_mcp_server"]
+            assert [s._attr_device_info["name"] for s in switches] == ["Garmin Connect MCP Moritz", "Garmin Connect MCP Belinda"]
+            assert seen[-1]["accounts"] == {"1": {"mcp_enabled": True}, "2": {"mcp_enabled": True}}
+            assert ("garmin_mcp_webhook", "garmin_login_2") in issue_registry.ISSUES
+            assert issue_registry.ISSUES[("garmin_mcp_webhook", "garmin_login_2")]["translation_placeholders"] == {"name": "Belinda"}
+            assert ("garmin_mcp_webhook", "garmin_login_1") not in issue_registry.ISSUES
+            assert stale.id in device_registry.REGISTRY.removed and kept.id not in device_registry.REGISTRY.removed
+            # switching off account 2 only affects account 2
+            await switches[1].async_turn_off()
+            assert seen[-1]["accounts"] == {"1": {"mcp_enabled": True}, "2": {"mcp_enabled": False}}
+        finally:
+            await integration.async_unload_entry(hass, entry)
+            assert not {"wh_m", "wh_b"} & set(REGISTERED)
+            issue_registry.ISSUES.clear()
             await runner.cleanup()
 
     asyncio.run(run())
@@ -360,7 +462,7 @@ def test_switch_blocks_the_webhook_and_tells_the_app(monkeypatch):
 
         async def fake_report(request):
             reports.append(await request.json())
-            return web.json_response({"login": "off" if not reports[-1]["mcp_enabled"] else "ok"})
+            return web.json_response({"login": "ok"})
 
         async def fake_mcp(request):
             forwarded.append(await request.json())
@@ -395,17 +497,17 @@ def test_switch_blocks_the_webhook_and_tells_the_app(monkeypatch):
             await asyncio.gather(*hass.tasks)
             switch = hass.config_entries.entities[0]
             assert switch.is_on and switch._attr_unique_id == "sw_mcp_server"
-            assert reports[-1]["mcp_enabled"] is True
+            assert reports[-1]["accounts"]["1"]["mcp_enabled"] is True
             assert (await call())["result"] == {"from": "app"}
 
             await switch.async_turn_off()
             assert not switch.is_on and switch.written_states[-1] == "off"
-            assert reports[-1]["mcp_enabled"] is False  # app told right away
+            assert reports[-1]["accounts"]["1"]["mcp_enabled"] is False  # app told right away
             answer = await call()
             assert answer["result"]["isError"] and len(forwarded) == 1  # nothing reached the app
 
             await switch.async_turn_on()
-            assert reports[-1]["mcp_enabled"] is True
+            assert reports[-1]["accounts"]["1"]["mcp_enabled"] is True
             assert (await call())["result"] == {"from": "app"} and len(forwarded) == 2
         finally:
             await integration.async_unload_entry(hass, entry)
@@ -428,7 +530,7 @@ def test_switch_restores_its_state(monkeypatch, last, expected):
         try:
             await integration.async_setup_entry(hass, entry)
             assert hass.config_entries.entities[0].is_on is expected
-            assert hass.data["garmin_mcp_webhook"]["rs"]["enabled"] is expected
+            assert hass.data["garmin_mcp_webhook"]["rs"]["accounts"]["1"]["enabled"] is expected
         finally:
             await integration.async_unload_entry(hass, entry)
             restore_state.LAST_STATE["value"] = None

@@ -75,7 +75,6 @@ SWITCHED_OFF_FILE = DATA / "mcp_switched_off"
 # never the Home Assistant configuration folder mapped into the container.
 MCP_USER = "garmin"
 NGINX_CONF = Path("/tmp/garmin-mcp-nginx.conf")
-NGINX_PROXY_CONF = Path("/tmp/garmin-mcp-proxy.conf")
 
 MCP_PORT = 8000          # upstream server, loopback only
 PUBLIC_PORT = 8100       # nginx, reached by tunnel / reverse proxy
@@ -94,6 +93,16 @@ DISCOVERY_FILE = DATA / "discovery_uuid"
 REPORT_MAX_AGE = 180
 WEBHOOK_ID_FILE = DATA / "webhook_id"
 WEBHOOK_DOMAIN = "garmin_mcp_webhook"
+
+# Several Garmin accounts. Account "1" keeps the files directly in /data (the
+# layout of the versions with a single account – an update changes nothing);
+# every further account gets /data/accounts/<id>/ with the same file names.
+ACCOUNTS_FILE = DATA / "accounts.json"
+ACCOUNTS_DIR = DATA / "accounts"
+MAX_ACCOUNTS = 10
+LOAD_WARNING_FROM = 4  # from this many accounts on, the page warns about the load
+# Key for the integration's status channel and the stand-in server (nginx adds it).
+REPORT_SECRET_FILE = DATA / "report_secret"
 
 log = logging.getLogger("garmin_mcp_app")
 SELECTION_FILE = DATA / "tool_selection.json"
@@ -166,11 +175,11 @@ ALL_TOOLS = frozenset(e["name"] for e in CATALOG) | READ_ONLY_TOOLS | ADDITIVE_T
 _UNCLASSIFIED = sorted(n for n in ALL_TOOLS if n not in READ_ONLY_TOOLS | ADDITIVE_TOOLS | DESTRUCTIVE_TOOLS)
 
 
-def load_selection() -> tuple[set[str], set[str]] | None:
+def load_selection(path: Path | None = None) -> tuple[set[str], set[str]] | None:
     """(picked tools, tools that existed when the user saved) or None if the
     user never saved a selection on the app page."""
     try:
-        data = json.loads(SELECTION_FILE.read_text())
+        data = json.loads((path or SELECTION_FILE).read_text())
     except (FileNotFoundError, ValueError):
         return None
     if isinstance(data, list):  # format of 0.2.x
@@ -180,16 +189,16 @@ def load_selection() -> tuple[set[str], set[str]] | None:
     return picked, known
 
 
-def save_selection(picked: set[str]) -> None:
+def save_selection(picked: set[str], path: Path | None = None) -> None:
     write_private(
-        SELECTION_FILE,
+        path or SELECTION_FILE,
         json.dumps({"enabled": sorted(picked & ALL_TOOLS), "known": sorted(ALL_TOOLS)}),
     )
 
 
-def new_tools() -> list[str]:
+def new_tools(path: Path | None = None) -> list[str]:
     """Tools added (by an update) since the user saved their selection."""
-    sel = load_selection()
+    sel = load_selection(path)
     if sel is None or not sel[1]:
         return []
     return sorted(ALL_TOOLS - sel[1])
@@ -269,17 +278,18 @@ def keep_days(options: dict) -> int:
         return 7
 
 
-def prune_downloads(days: int, now: float | None = None) -> int:
+def prune_downloads(days: int, folder: Path | None = None, now: float | None = None) -> int:
     """Delete downloaded files older than `days` (0 = keep everything).
 
     Downloads are only a hand-over to the AI; keeping them forever would fill
     the disk and every Home Assistant backup."""
-    if days <= 0 or not DOWNLOAD_DIR.is_dir():
+    folder = folder or DOWNLOAD_DIR
+    if days <= 0 or not folder.is_dir():
         return 0
     limit = (now or time.time()) - days * 86400
     removed = 0
     # os.walk never follows symlinks; a link is removed itself, not its target.
-    for root, dirs, files in os.walk(DOWNLOAD_DIR, topdown=False, followlinks=False):
+    for root, dirs, files in os.walk(folder, topdown=False, followlinks=False):
         for name in files + [d for d in dirs if os.path.islink(os.path.join(root, d))]:
             path = Path(root, name)
             try:
@@ -288,7 +298,7 @@ def prune_downloads(days: int, now: float | None = None) -> int:
                     removed += 1
             except OSError as exc:
                 log.debug("Could not remove %s: %s", path, exc)
-        if Path(root) != DOWNLOAD_DIR:
+        if Path(root) != folder:
             try:
                 Path(root).rmdir()  # only succeeds when empty
             except OSError:
@@ -302,9 +312,9 @@ def _names(values) -> set[str]:
     return {str(v).strip().lower() for v in (values or []) if str(v).strip()}
 
 
-def tool_selection(options: dict) -> tuple[dict, set[str]]:
+def tool_selection(options: dict, selection_file: Path | None = None) -> tuple[dict, set[str]]:
     """Return (environment for garmin-mcp, set of tools that will be active)."""
-    sel = load_selection()
+    sel = load_selection(selection_file)
     if sel is not None:
         picked = sel[0]
         return {"GARMIN_DISABLED_TOOLS": ",".join(sorted(ALL_TOOLS - picked))}, picked
@@ -364,59 +374,77 @@ def write_private(path: Path, content: str) -> None:
     os.replace(tmp, path)
 
 
-def get_secret(rotate: bool = False) -> str:
-    if not rotate and SECRET_FILE.exists():
-        value = SECRET_FILE.read_text().strip()
+def _read_or_create(path: Path, make, rotate: bool = False) -> str:
+    if not rotate and path.exists():
+        value = path.read_text().strip()
         if len(value) >= 24:
             return value
-    value = secrets.token_urlsafe(32)
-    write_private(SECRET_FILE, value)
-    log.info("Generated a new secret path")
+    value = make()
+    path.parent.mkdir(parents=True, exist_ok=True)
+    write_private(path, value)
     return value
 
 
-def get_webhook_id(rotate: bool = False) -> str:
-    if not rotate and WEBHOOK_ID_FILE.exists():
-        value = WEBHOOK_ID_FILE.read_text().strip()
-        if len(value) >= 24:
-            return value
-    value = "garmin_mcp_" + secrets.token_urlsafe(32)
-    write_private(WEBHOOK_ID_FILE, value)
+def get_secret(rotate: bool = False, path: Path | None = None) -> str:
+    value = _read_or_create(path or SECRET_FILE, lambda: secrets.token_urlsafe(32), rotate)
+    if rotate:
+        log.info("Generated a new secret path")
     return value
 
 
-def has_tokens() -> bool:
-    return (TOKEN_DIR / "garmin_tokens.json").is_file()
+def get_webhook_id(rotate: bool = False, path: Path | None = None) -> str:
+    return _read_or_create(path or WEBHOOK_ID_FILE, lambda: "garmin_mcp_" + secrets.token_urlsafe(32), rotate)
 
 
-def read_account() -> dict:
+def get_report_secret() -> str:
+    """Key of the status channel and the stand-in server – its own secret, never
+    one of the accounts' secret paths (those end up in AI apps)."""
+    return _read_or_create(REPORT_SECRET_FILE, lambda: secrets.token_urlsafe(32))
+
+
+def has_tokens(token_dir: Path | None = None) -> bool:
+    return ((token_dir or TOKEN_DIR) / "garmin_tokens.json").is_file()
+
+
+def read_account(path: Path | None = None) -> dict:
     try:
-        return json.loads(ACCOUNT_FILE.read_text())
+        return json.loads((path or ACCOUNT_FILE).read_text())
     except (FileNotFoundError, json.JSONDecodeError):
         return {}
 
 
-def mcp_identity() -> tuple[int, int] | None:
-    """(uid, gid) of the MCP server user, or None where it does not exist (tests)."""
+def mcp_identity(user: str = MCP_USER) -> tuple[int, int] | None:
+    """(uid, gid) of an MCP server user, or None where it does not exist (tests)."""
     import pwd
 
     try:
-        entry = pwd.getpwnam(MCP_USER)
+        entry = pwd.getpwnam(user)
     except KeyError:
         return None
     return entry.pw_uid, entry.pw_gid
 
 
-def prepare_mcp_dirs(identity: tuple[int, int] | None) -> None:
-    """Folders the MCP server may write: owned by its user, private."""
+def _allow_passage(folder: Path) -> None:
+    """Execute bit only: the MCP user may pass through, but not list the folder."""
+    mode = folder.stat().st_mode & 0o777
+    if not mode & 0o001:
+        os.chmod(folder, mode | 0o001)
+
+
+def prepare_mcp_dirs(identity: tuple[int, int] | None, account: "Account | None" = None) -> None:
+    """Folders the MCP server of an account may write: owned by its user, private.
+    Every account has its own user, so no account can read another one's tokens."""
+    base = account.base if account is not None else DATA
+    folders = account.private_dirs() if account is not None else (TOKEN_DIR, DOWNLOAD_DIR, MCP_HOME)
     if identity is not None:
-        # The user must be able to pass through /data to reach its folders
-        # (execute bit only: it cannot list /data; files there are 0600).
-        mode = DATA.stat().st_mode & 0o777
-        if not mode & 0o001:
-            os.chmod(DATA, mode | 0o001)
-    for folder in (TOKEN_DIR, DOWNLOAD_DIR, MCP_HOME):
-        folder.mkdir(mode=0o700, exist_ok=True)
+        _allow_passage(DATA)
+        if base != DATA:
+            ACCOUNTS_DIR.mkdir(mode=0o711, exist_ok=True)
+            _allow_passage(ACCOUNTS_DIR)
+            base.mkdir(mode=0o711, exist_ok=True)
+            _allow_passage(base)
+    for folder in folders:
+        folder.mkdir(mode=0o700, parents=True, exist_ok=True)
         if identity is None:
             continue
         uid, gid = identity
@@ -454,29 +482,33 @@ http {{
     scgi_temp_path /tmp/nginx-scgi;
     server {{
         listen {public_port} default_server;
-
-        location = /{secret}/mcp {{
-            include /tmp/garmin-mcp-proxy.conf;
-        }}
-        location = /{secret}/mcp/ {{
-            include /tmp/garmin-mcp-proxy.conf;
-        }}
-{report_location}
-        # Server not running (not logged in, starting, login failed): a small
-        # stand-in in the app answers proper MCP messages that tell the AI why.
-        location @unavailable {{
-            # (a named location may not have a path in proxy_pass)
-            rewrite ^ /mcp-unavailable break;
-            proxy_pass http://127.0.0.1:{ui_port};
-            proxy_set_header X-Report-Key "{secret}";
-            proxy_set_header Host 127.0.0.1;
-            proxy_set_header Origin "";
-        }}
+{account_locations}{report_location}
         location / {{
             return 404;
         }}
     }}
 }}
+"""
+
+# One block per Garmin account: its own secret path and its own server.
+NGINX_ACCOUNT = """
+        location = /{secret}/mcp {{
+            include {proxy_conf};
+        }}
+        location = /{secret}/mcp/ {{
+            include {proxy_conf};
+        }}
+        # Server not running (not logged in, starting, login failed, switched
+        # off): a small stand-in in the app answers proper MCP messages that
+        # tell the AI why.
+        location @unavailable_{account} {{
+            # (a named location may not have a path in proxy_pass)
+            rewrite ^ /mcp-unavailable/{account} break;
+            proxy_pass http://127.0.0.1:{ui_port};
+            proxy_set_header X-Report-Key "{report_secret}";
+            proxy_set_header Host 127.0.0.1;
+            proxy_set_header Origin "";
+        }}
 """
 
 
@@ -492,100 +524,137 @@ proxy_buffering off;
 proxy_cache off;
 proxy_read_timeout 300s;
 proxy_send_timeout 300s;
-error_page 502 503 504 = @unavailable;
+error_page 502 503 504 = @unavailable_{account};
 """
 
 
-class Services:
-    """Starts, stops and supervises nginx and the garmin-mcp server."""
+class Account:
+    """One Garmin account: its files, its secret URL and its own MCP server."""
 
-    def __init__(self) -> None:
-        self.lock = threading.RLock()
+    def __init__(self, record: dict, services: "Services") -> None:
+        self.services = services
+        self.id = str(record["id"])
+        self.slot = int(record["slot"])
+        self.custom_name = str(record.get("custom_name", ""))[:60]
+        self.base = DATA if self.id == "1" else ACCOUNTS_DIR / self.id
+        self.token_dir = self.base / "garmin_tokens"
+        self.secret_file = self.base / "secret_path"
+        self.info_file = self.base / "account.json"
+        self.download_dir = self.base / "downloads"
+        self.home = self.base / "mcp_home"
+        # Written by the MCP server when Garmin rejects the login during a tool
+        # call (run_mcp.py); removed on success and on a new login.
+        self.auth_failed_file = self.home / "auth_failed"
+        # Exists while the account's switch in Home Assistant is off (webhook mode).
+        self.switched_off_file = self.base / "mcp_switched_off"
+        self.webhook_id_file = self.base / "webhook_id"
+        # Write access, areas and tool choice of this account when the accounts
+        # do not share their settings.
+        self.own_settings_file = self.base / "own_settings.json"
+        self.own_selection_file = self.base / "own_tool_selection.json"
+        self.port = MCP_PORT + self.slot - 1
+        self.user = MCP_USER if self.slot == 1 else f"{MCP_USER}{self.slot}"
+        self.proxy_conf = Path(f"/tmp/garmin-mcp-proxy-{self.id}.conf")
+        if self.base != DATA:
+            # Passable, but not listable, for the accounts' users.
+            for folder in (ACCOUNTS_DIR, self.base):
+                folder.mkdir(mode=0o711, exist_ok=True)
+                os.chmod(folder, 0o711)
+        self.secret = get_secret(path=self.secret_file)
+        self.webhook_id = get_webhook_id(path=self.webhook_id_file)
+        if services.options.get("remote_access", "webhook") != "webhook":
+            self.switched_off_file.unlink(missing_ok=True)  # the switch exists only in webhook mode
+        self.switched_off = self.switched_off_file.exists()
         self.mcp: subprocess.Popen | None = None
-        self.nginx: subprocess.Popen | None = None
-        self.stopping = False
-        self.options = load_options()
-        self.mcp_env, self.active_tools = tool_selection(self.options)
-        self.secret = get_secret()
-        # The switch in Home Assistant exists only in webhook mode.
-        if self.options.get("remote_access", "webhook") != "webhook":
-            SWITCHED_OFF_FILE.unlink(missing_ok=True)
-        self.switched_off = SWITCHED_OFF_FILE.exists()
+        self.pending_mfa: dict = {}
+        self.test_result: dict = {}
         self._mcp_failures = 0
         self._login_failures = 0
         self._next_login_retry = 0.0
+        self.reload_settings()
 
-    # nginx ---------------------------------------------------------------
-    def _report_location(self) -> str:
-        """Status channel for the helper integration (webhook mode only).
+    # names and files -------------------------------------------------------
+    def private_dirs(self) -> tuple[Path, Path, Path]:
+        return self.token_dir, self.download_dir, self.home
 
-        Reachable only from Home Assistant's internal network (never via the
-        webhook, which forwards /mcp only), and nginx adds the key."""
-        if self.options.get("remote_access", "webhook") != "webhook":
-            return ""
-        return (
-            f"        location = /{self.secret}/ha {{\n"
-            "            allow 172.30.32.0/23;\n"
-            "            deny all;\n"
-            "            limit_except POST { deny all; }\n"
-            f"            proxy_pass http://127.0.0.1:{UI_PORT}/report;\n"
-            f'            proxy_set_header X-Report-Key "{self.secret}";\n'
-            "            proxy_set_header Host 127.0.0.1;\n"
-            "            client_max_body_size 4k;\n"
-            "        }\n"
-        )
+    def garmin_name(self) -> str:
+        return str(read_account(self.info_file).get("name") or "")
 
-    def write_nginx_conf(self) -> None:
-        write_private(NGINX_PROXY_CONF, NGINX_PROXY.format(mcp_port=MCP_PORT))
-        write_private(
-            NGINX_CONF,
-            NGINX_TEMPLATE.format(
-                public_port=PUBLIC_PORT,
-                mcp_port=MCP_PORT,
-                secret=self.secret,
-                report_location=self._report_location(),
-                ui_port=UI_PORT,
-            ),
-        )
+    def display_name(self) -> str:
+        """Own name > name of the Garmin profile > number."""
+        return self.custom_name or self.garmin_name() or self.id
 
-    def start_nginx(self) -> None:
-        self.write_nginx_conf()
-        self.nginx = subprocess.Popen(
-            ["nginx", "-c", str(NGINX_CONF), "-g", "daemon off;"]
-        )
-        log.info("nginx listening on port %s", PUBLIC_PORT)
+    def has_tokens(self) -> bool:
+        return has_tokens(self.token_dir)
 
-    def rotate_secret(self) -> None:
-        with self.lock:
-            self.secret = get_secret(rotate=True)
-            self.write_nginx_conf()
-            subprocess.run(["nginx", "-c", str(NGINX_CONF), "-s", "reload"], check=False)
+    def record(self) -> dict:
+        return {"id": self.id, "slot": self.slot, "custom_name": self.custom_name}
 
-    # garmin-mcp ----------------------------------------------------------
+    # settings --------------------------------------------------------------
+    def own_settings(self) -> dict:
+        try:
+            data = json.loads(self.own_settings_file.read_text())
+        except (FileNotFoundError, ValueError):
+            data = {}
+        result = {
+            "write_access": self.services.options.get("write_access", "create_only"),
+            "tool_areas": list(self.services.options.get("tool_areas") or ["all"]),
+        }
+        if data.get("write_access") in ("read_only", "create_only", "full"):
+            result["write_access"] = data["write_access"]
+        areas = [str(a) for a in data.get("tool_areas", []) if str(a) in TOOL_AREAS]
+        if areas:
+            result["tool_areas"] = areas
+        return result
+
+    def save_own_settings(self, write_access: str, areas: list[str]) -> None:
+        if write_access not in ("read_only", "create_only", "full"):
+            write_access = "create_only"
+        areas = [a for a in areas if a in TOOL_AREAS] or ["all"]
+        write_private(self.own_settings_file, json.dumps({"write_access": write_access, "tool_areas": areas}))
+
+    def options(self) -> dict:
+        """The app options as they apply to this account."""
+        options = dict(self.services.options)
+        if not self.services.same_settings:
+            options.update(self.own_settings())
+        return options
+
+    def selection_file(self) -> Path:
+        return SELECTION_FILE if self.services.same_settings else self.own_selection_file
+
+    def reload_settings(self) -> None:
+        self.mcp_env, self.active_tools = tool_selection(self.options(), self.selection_file())
+
+    def reload_tools(self) -> None:
+        self.reload_settings()
+        self.restart_mcp()
+
+    # garmin-mcp ------------------------------------------------------------
     def start_mcp(self) -> None:
-        with self.lock:
+        with self.services.lock:
             if self.mcp and self.mcp.poll() is None:
                 return
             if self.switched_off:
-                log.info("The MCP server is switched off in Home Assistant")
+                log.info("[%s] The MCP server is switched off in Home Assistant", self.display_name())
                 return
-            if not has_tokens():
-                log.info("Not logged in to Garmin Connect yet – open the app page to log in")
+            if not self.has_tokens():
+                log.info("[%s] Not logged in to Garmin Connect yet – open the app page to log in", self.display_name())
                 return
-            identity = mcp_identity()
-            prepare_mcp_dirs(identity)
+            identity = mcp_identity(self.user)
+            prepare_mcp_dirs(identity, self)
             env = dict(os.environ)
             env.update(self.mcp_env)
             env.update(
                 {
                     "GARMIN_MCP_TRANSPORT": "streamable-http",
                     "GARMIN_MCP_HOST": "127.0.0.1",
-                    "GARMIN_MCP_PORT": str(MCP_PORT),
+                    "GARMIN_MCP_PORT": str(self.port),
                     "GARMIN_MCP_STATELESS_HTTP": "true",
-                    "GARMINTOKENS": str(TOKEN_DIR),
-                    "GARMINTOKENS_BASE64": str(TOKEN_DIR / "tokens.b64"),
-                    "GARMIN_FIT_DOWNLOAD_DIR": str(DOWNLOAD_DIR),
-                    "HOME": str(MCP_HOME),
+                    "GARMINTOKENS": str(self.token_dir),
+                    "GARMINTOKENS_BASE64": str(self.token_dir / "tokens.b64"),
+                    "GARMIN_FIT_DOWNLOAD_DIR": str(self.download_dir),
+                    "HOME": str(self.home),
                 }
             )
             # The MCP server is reachable from the internet and runs tools on
@@ -599,23 +668,26 @@ class Services:
                 )
                 if sensitive:
                     env.pop(key, None)
-            level = str(self.options.get("log_level", "info")).lower()
+            level = str(self.services.options.get("log_level", "info")).lower()
             env["GARMIN_APP_LOG_LEVEL"] = "DEBUG" if level == "debug" else "WARNING"
             run_mcp = Path(__file__).resolve().parent / "run_mcp.py"
             drop = {}
             if identity is not None:
                 drop = {"user": identity[0], "group": identity[1], "extra_groups": [], "umask": 0o077}
             else:
-                log.warning("User %r missing – the MCP server runs with full rights", MCP_USER)
-            self.mcp = subprocess.Popen([sys.executable, str(run_mcp)], env=env, cwd=str(DOWNLOAD_DIR), **drop)
+                log.warning("User %r missing – the MCP server runs with full rights", self.user)
+            self.mcp = subprocess.Popen(
+                [sys.executable, str(run_mcp)], env=env, cwd=str(self.download_dir), **drop
+            )
             log.info(
-                "garmin-mcp started (%d tools active, write access: %s)",
+                "[%s] garmin-mcp started (%d tools active, write access: %s)",
+                self.display_name(),
                 len(self.active_tools),
-                self.options.get("write_access"),
+                self.options().get("write_access"),
             )
 
     def stop_mcp(self) -> None:
-        with self.lock:
+        with self.services.lock:
             proc, self.mcp = self.mcp, None
         if proc and proc.poll() is None:
             proc.terminate()
@@ -625,20 +697,20 @@ class Services:
                 proc.kill()
 
     def set_switched_off(self, off: bool) -> None:
-        """Switch of the helper integration in Home Assistant: stop or start the server."""
-        with self.lock:
+        """The account's switch in Home Assistant: stop or start its server."""
+        with self.services.lock:
             if off == self.switched_off:
                 return
             self.switched_off = off
             if off:
-                SWITCHED_OFF_FILE.touch()
+                self.switched_off_file.touch()
             else:
-                SWITCHED_OFF_FILE.unlink(missing_ok=True)
+                self.switched_off_file.unlink(missing_ok=True)
         if off:
-            log.info("MCP server switched off in Home Assistant")
+            log.info("[%s] MCP server switched off in Home Assistant", self.display_name())
             self.stop_mcp()
         else:
-            log.info("MCP server switched on in Home Assistant")
+            log.info("[%s] MCP server switched on in Home Assistant", self.display_name())
             self._mcp_failures = 0
             self.start_mcp()
 
@@ -652,18 +724,12 @@ class Services:
         self._login_failures = 0
         self._next_login_retry = 0.0
 
-    def reload_tools(self) -> None:
-        self.mcp_env, self.active_tools = tool_selection(self.options)
-        self.restart_mcp()
-
     def mcp_state(self) -> str:
         """'stopped', 'pending', 'ready' or 'failed'."""
         if not self.mcp or self.mcp.poll() is not None:
             return "stopped"
         try:
-            with urllib.request.urlopen(
-                f"http://127.0.0.1:{MCP_PORT}/readyz", timeout=2
-            ) as resp:
+            with urllib.request.urlopen(f"http://127.0.0.1:{self.port}/readyz", timeout=2) as resp:
                 return json.loads(resp.read()).get("status", "ready")
         except urllib.error.HTTPError as exc:
             try:
@@ -673,12 +739,11 @@ class Services:
         except Exception:  # noqa: BLE001 - not listening yet
             return "pending"
 
-    # supervision ---------------------------------------------------------
-    def _check_login(self) -> None:
+    def check_login(self) -> None:
         """Tell the user in Home Assistant when the Garmin login stops working."""
         if self.switched_off:
             return
-        state = self.mcp_state() if has_tokens() else "stopped"
+        state = self.mcp_state() if self.has_tokens() else "stopped"
         if state == "ready":
             self._login_failures = 0
         if state == "failed" and time.time() >= self._next_login_retry:
@@ -689,7 +754,8 @@ class Services:
             pause = (120, 600, 1800, 3600)[min(self._login_failures - 1, 3)]
             self._next_login_retry = time.time() + pause
             log.warning(
-                "Garmin login failed (attempt %d) – restarting the server, next try in %d min",
+                "[%s] Garmin login failed (attempt %d) – restarting the server, next try in %d min",
+                self.display_name(),
                 self._login_failures,
                 pause // 60,
             )
@@ -701,7 +767,7 @@ class Services:
         if self.switched_off:
             return "off"
         state = self.mcp_state()
-        if state == "ready" and AUTH_FAILED_FILE.exists():
+        if state == "ready" and self.auth_failed_file.exists():
             return "failed"
         return state
 
@@ -710,10 +776,10 @@ class Services:
         'starting' or 'off' (switched off in Home Assistant)."""
         if self.switched_off:
             return "off"
-        if not has_tokens():
+        if not self.has_tokens():
             return "logged_out"
         state = self.mcp_state()
-        if state == "ready" and AUTH_FAILED_FILE.exists():
+        if state == "ready" and self.auth_failed_file.exists():
             return "failed"  # Garmin rejected the login while the server was running
         if state == "ready":
             return "ok"
@@ -721,46 +787,239 @@ class Services:
             return "failed"
         return "starting"
 
+    def expire_pending_mfa(self) -> None:
+        """Drop a half-finished MFA login (it holds the password in memory)."""
+        if self.pending_mfa and time.time() - self.pending_mfa.get("started", 0) > MFA_TIMEOUT:
+            self.pending_mfa.clear()
+
+    def supervise_tick(self) -> float:
+        """Restart a crashed server. Returns the pause before the restart (0 = none)."""
+        with self.services.lock:
+            if self.mcp and self.mcp.poll() is not None:
+                self._mcp_failures += 1
+                delay = min(60, 5 * self._mcp_failures)
+                log.error("[%s] garmin-mcp exited (%s), restarting in %ss", self.display_name(), self.mcp.returncode, delay)
+                self.mcp = None
+                return delay
+        return 0
+
+    def delete_files(self) -> None:
+        """Remove everything of this account (tokens, URL, settings, downloads)."""
+        if self.base == DATA:
+            for path in (self.token_dir, self.download_dir, self.home):
+                shutil.rmtree(path, ignore_errors=True)
+            for path in (
+                self.secret_file, self.info_file, self.switched_off_file, self.webhook_id_file,
+                self.own_settings_file, self.own_selection_file, DATA / "garmin_tokens.b64",
+            ):
+                path.unlink(missing_ok=True)
+        else:
+            shutil.rmtree(self.base, ignore_errors=True)
+
+
+TOOL_AREAS = ("all", "minimal", "health", "activities", "workouts", "training", "nutrition")
+
+
+class AccountError(Exception):
+    def __init__(self, key: str) -> None:
+        super().__init__(key)
+        self.key = key
+
+
+class Services:
+    """Starts, stops and supervises nginx and one garmin-mcp server per account."""
+
+    def __init__(self) -> None:
+        self.lock = threading.RLock()
+        self.nginx: subprocess.Popen | None = None
+        self.stopping = False
+        self.options = load_options()
+        self.report_secret = get_report_secret()
+        registry = self._load_registry()
+        self.same_settings = bool(registry.get("same_settings", True))
+        self.next_id = int(registry.get("next_id", 2))
+        self.accounts: dict[str, Account] = {}
+        for record in registry.get("accounts", []):
+            try:
+                account = Account(record, self)
+            except (KeyError, ValueError, TypeError) as exc:
+                log.error("Ignoring a broken account entry: %s", exc)
+                continue
+            self.accounts[account.id] = account
+
+    # accounts ------------------------------------------------------------------
+    def _load_registry(self) -> dict:
+        try:
+            data = json.loads(ACCOUNTS_FILE.read_text())
+            if isinstance(data, dict) and isinstance(data.get("accounts"), list):
+                return data
+        except FileNotFoundError:
+            pass
+        except ValueError as exc:
+            log.error("accounts.json is invalid (%s) – starting with one account", exc)
+        # First start, or an update from a version with a single account: the
+        # existing login, URL and settings simply become account 1.
+        data = {"accounts": [{"id": "1", "slot": 1, "custom_name": ""}], "next_id": 2, "same_settings": True}
+        write_private(ACCOUNTS_FILE, json.dumps(data))
+        return data
+
+    def save_registry(self) -> None:
+        write_private(
+            ACCOUNTS_FILE,
+            json.dumps(
+                {
+                    "accounts": [a.record() for a in self.accounts.values()],
+                    "next_id": self.next_id,
+                    "same_settings": self.same_settings,
+                }
+            ),
+        )
+
+    @property
+    def primary(self) -> "Account | None":
+        """The first account (the one older helper integrations know about)."""
+        return next(iter(self.accounts.values()), None)
+
+    def account(self, account_id) -> Account:
+        account = self.accounts.get(str(account_id or ""))
+        if account is None:
+            raise AccountError("err_no_account")
+        return account
+
+    def add_account(self) -> Account:
+        with self.lock:
+            if len(self.accounts) >= MAX_ACCOUNTS:
+                raise AccountError("err_max_accounts")
+            used = {a.slot for a in self.accounts.values()}
+            slot = min(s for s in range(1, MAX_ACCOUNTS + 1) if s not in used)
+            account_id = str(self.next_id)
+            self.next_id += 1
+            account = Account({"id": account_id, "slot": slot, "custom_name": ""}, self)
+            self.accounts[account.id] = account
+            self.save_registry()
+            self.reload_nginx()
+        log.info("Account %s added", account.id)
+        return account
+
+    def remove_account(self, account: Account) -> None:
+        account.stop_mcp()
+        account.pending_mfa.clear()
+        with self.lock:
+            self.accounts.pop(account.id, None)
+            account.delete_files()
+            self.save_registry()
+            self.reload_nginx()
+        log.info("Account %s removed (tokens deleted)", account.id)
+
+    def rename_account(self, account: Account, name: str) -> None:
+        name = " ".join(str(name or "").split())[:40]
+        with self.lock:
+            account.custom_name = name
+            self.save_registry()
+
+    def set_same_settings(self, same: bool) -> None:
+        with self.lock:
+            self.same_settings = bool(same)
+            self.save_registry()
+        for account in list(self.accounts.values()):
+            account.reload_tools()
+
+    # nginx ---------------------------------------------------------------
+    def _report_location(self) -> str:
+        """Status channel for the helper integration (webhook mode only).
+
+        Reachable only from Home Assistant's internal network (never via the
+        webhooks, which forward /mcp only), and nginx adds the key."""
+        if self.options.get("remote_access", "webhook") != "webhook":
+            return ""
+        return (
+            f"        location = /{self.report_secret}/ha {{\n"
+            "            allow 172.30.32.0/23;\n"
+            "            deny all;\n"
+            "            limit_except POST { deny all; }\n"
+            f"            proxy_pass http://127.0.0.1:{UI_PORT}/report;\n"
+            f'            proxy_set_header X-Report-Key "{self.report_secret}";\n'
+            "            proxy_set_header Host 127.0.0.1;\n"
+            "            client_max_body_size 4k;\n"
+            "        }\n"
+        )
+
+    def write_nginx_conf(self) -> None:
+        blocks = []
+        for account in self.accounts.values():
+            write_private(account.proxy_conf, NGINX_PROXY.format(mcp_port=account.port, account=account.id))
+            blocks.append(
+                NGINX_ACCOUNT.format(
+                    secret=account.secret,
+                    account=account.id,
+                    proxy_conf=account.proxy_conf,
+                    ui_port=UI_PORT,
+                    report_secret=self.report_secret,
+                )
+            )
+        write_private(
+            NGINX_CONF,
+            NGINX_TEMPLATE.format(
+                public_port=PUBLIC_PORT,
+                account_locations="".join(blocks),
+                report_location=self._report_location(),
+            ),
+        )
+
+    def start_nginx(self) -> None:
+        self.write_nginx_conf()
+        self.nginx = subprocess.Popen(["nginx", "-c", str(NGINX_CONF), "-g", "daemon off;"])
+        log.info("nginx listening on port %s", PUBLIC_PORT)
+
+    def reload_nginx(self) -> None:
+        self.write_nginx_conf()
+        if self.nginx and self.nginx.poll() is None:
+            subprocess.run(["nginx", "-c", str(NGINX_CONF), "-s", "reload"], check=False)
+
+    def rotate_secret(self, account: Account) -> None:
+        with self.lock:
+            account.secret = get_secret(rotate=True, path=account.secret_file)
+            self.reload_nginx()
+
+    # all servers ---------------------------------------------------------------
+    def start_all(self) -> None:
+        for account in list(self.accounts.values()):
+            account.start_mcp()
+
     def supervise(self) -> None:
         ticks = 0
         while not self.stopping:
             time.sleep(5)
             ticks += 1
+            accounts = list(self.accounts.values())
             if ticks % 12 == 0:  # once a minute
-                try:
-                    expire_pending_mfa()
-                    self._check_login()
-                except Exception as exc:  # noqa: BLE001
-                    log.debug("Login check failed: %s", exc)
+                for account in accounts:
+                    try:
+                        account.expire_pending_mfa()
+                        account.check_login()
+                    except Exception as exc:  # noqa: BLE001
+                        log.debug("Login check failed: %s", exc)
             if ticks % 720 == 1:  # at start, then once an hour
-                try:
-                    prune_downloads(keep_days(self.options))
-                except Exception as exc:  # noqa: BLE001
-                    log.debug("Download cleanup failed: %s", exc)
+                for account in accounts:
+                    try:
+                        prune_downloads(keep_days(self.options), account.download_dir)
+                    except Exception as exc:  # noqa: BLE001
+                        log.debug("Download cleanup failed: %s", exc)
             with self.lock:
                 if self.stopping:
                     return
                 if self.nginx and self.nginx.poll() is not None:
                     log.error("nginx exited (%s), restarting", self.nginx.returncode)
                     self.start_nginx()
-                if self.mcp and self.mcp.poll() is not None:
-                    self._mcp_failures += 1
-                    delay = min(60, 5 * self._mcp_failures)
-                    log.error(
-                        "garmin-mcp exited (%s), restarting in %ss",
-                        self.mcp.returncode,
-                        delay,
-                    )
-                    self.mcp = None
-                else:
-                    delay = 0
-            if delay:
-                time.sleep(delay)
-                self.start_mcp()
+            for account in accounts:
+                delay = account.supervise_tick()
+                if delay and not self.stopping:
+                    threading.Timer(delay, account.start_mcp).start()
 
     def shutdown(self) -> None:
         self.stopping = True
-        self.stop_mcp()
+        for account in list(self.accounts.values()):
+            account.stop_mcp()
         if self.nginx and self.nginx.poll() is None:
             self.nginx.terminate()
 
@@ -821,7 +1080,6 @@ class RemoteAccess:
         self.enabled = services.options.get("remote_access", "webhook") == "webhook"
         self.state = "setting_up" if self.enabled else "disabled"
         self.detail = ""
-        self.webhook_id = get_webhook_id()
         self._wake = threading.Event()
         self._announced = ""
         self._started = time.time()
@@ -857,13 +1115,26 @@ class RemoteAccess:
 
     # discovery -----------------------------------------------------------
     def discovery_config(self) -> dict:
-        base = f"http://{_own_ip()}:{PUBLIC_PORT}/{self.services.secret}"
-        return {
-            "webhook_id": self.webhook_id,
-            "target_url": f"{base}/mcp",
-            "report_url": f"{base}/ha",
+        host = f"http://{_own_ip()}:{PUBLIC_PORT}"
+        accounts = [
+            {
+                "id": account.id,
+                "name": account.display_name(),
+                "webhook_id": account.webhook_id,
+                "target_url": f"{host}/{account.secret}/mcp",
+            }
+            for account in self.services.accounts.values()
+        ]
+        config = {
+            "accounts": accounts,
+            "report_url": f"{host}/{self.services.report_secret}/ha",
             "app_slug": app_slug(),
         }
+        if accounts:
+            # Helper integrations before 0.5 only know a single account.
+            config["webhook_id"] = accounts[0]["webhook_id"]
+            config["target_url"] = accounts[0]["target_url"]
+        return config
 
     def _announce(self) -> bool:
         config = self.discovery_config()
@@ -902,15 +1173,33 @@ class RemoteAccess:
             "restart_needed": bool(report.get("restart_needed")),
         }
         self._update_state()
-        # Switch "Server" of the helper integration; older versions don't send it.
-        if isinstance(report.get("mcp_enabled"), bool):
-            self.services.set_switched_off(not report["mcp_enabled"])
-        return {
-            "mcp_enabled": not self.services.switched_off,
-            "login": self.services.login_status(),
+        # The switches of the helper integration (one per account).
+        switches = report.get("accounts")
+        if isinstance(switches, dict):
+            for account_id, info in list(switches.items())[:MAX_ACCOUNTS]:
+                account = self.services.accounts.get(str(account_id))
+                if account is not None and isinstance(info, dict) and isinstance(info.get("mcp_enabled"), bool):
+                    account.set_switched_off(not info["mcp_enabled"])
+        elif isinstance(report.get("mcp_enabled"), bool) and self.services.primary is not None:
+            # Helper integration 0.4: one switch for the first account
+            self.services.primary.set_switched_off(not report["mcp_enabled"])
+        answer = {
+            "accounts": {
+                account.id: {
+                    "name": account.display_name(),
+                    "login": account.login_status(),
+                    "mcp_enabled": not account.switched_off,
+                }
+                for account in self.services.accounts.values()
+            },
             "notify": bool(self.services.options.get("login_notification", True)),
             "app_version": os.environ.get("APP_VERSION", "dev"),
         }
+        primary = self.services.primary
+        if primary is not None:  # for helper integrations before 0.5
+            answer["login"] = answer["accounts"][primary.id]["login"]
+            answer["mcp_enabled"] = answer["accounts"][primary.id]["mcp_enabled"]
+        return answer
 
     def _update_state(self) -> None:
         if not self.enabled or self.state == "error":
@@ -972,8 +1261,8 @@ class RemoteAccess:
             self._wake.wait(30 if not announced or self.state != "active" else 300)
             self._wake.clear()
 
-    def rotate(self) -> None:
-        self.webhook_id = get_webhook_id(rotate=True)
+    def rotate(self, account: "Account") -> None:
+        account.webhook_id = get_webhook_id(rotate=True, path=account.webhook_id_file)
         self._wake.set()
 
     def nudge(self) -> None:
@@ -988,9 +1277,6 @@ class RemoteAccess:
 # --------------------------------------------------------------------------
 # Connection test
 # --------------------------------------------------------------------------
-TEST_RESULT: dict = {}
-
-
 def _mcp_request(url: str, payload: dict, host_header: str | None = None, timeout: int = 20):
     headers = {
         "Content-Type": "application/json",
@@ -1009,8 +1295,8 @@ def _mcp_request(url: str, payload: dict, host_header: str | None = None, timeou
     return json.loads(lines[0] if lines else raw)
 
 
-def run_connection_test() -> dict:
-    """Check server, Garmin account and the public connector URL, one by one."""
+def run_connection_test(account: "Account") -> dict:
+    """Check server, Garmin account and the public connector URL of an account."""
     result: dict = {"time": time.strftime("%H:%M:%S"), "checks": []}
 
     def add(key: str, ok: bool, detail: str = "", warn: bool = False) -> None:
@@ -1019,21 +1305,21 @@ def run_connection_test() -> dict:
     # 1. MCP server answers locally
     try:
         data = _mcp_request(
-            f"http://127.0.0.1:{MCP_PORT}/mcp",
+            f"http://127.0.0.1:{account.port}/mcp",
             {"jsonrpc": "2.0", "id": 1, "method": "tools/list"},
-            host_header=f"127.0.0.1:{MCP_PORT}",
+            host_header=f"127.0.0.1:{account.port}",
         )
         add("test_server", True, str(len(data["result"]["tools"])))
     except Exception as exc:  # noqa: BLE001
         add("test_server", False, type(exc).__name__)
 
     # 2. Garmin account reachable with the saved tokens
-    if not has_tokens():
+    if not account.has_tokens():
         add("test_garmin", False, "@not_logged_in")
     else:
         try:
             client = Garmin()
-            client.login(str(TOKEN_DIR))
+            client.login(str(account.token_dir))
             add("test_garmin", True, client.full_name or client.display_name or "")
         except Exception as exc:  # noqa: BLE001
             text = str(exc)
@@ -1045,7 +1331,7 @@ def run_connection_test() -> dict:
             # login() may have refreshed the token files as root – hand them
             # back to the MCP server's user, or it could not update them.
             try:
-                prepare_mcp_dirs(mcp_identity())
+                prepare_mcp_dirs(mcp_identity(account.user), account)
             except OSError as exc:
                 log.warning("Could not fix token permissions: %s", exc)
 
@@ -1053,10 +1339,10 @@ def run_connection_test() -> dict:
     #    public address, exactly like the AI app reaches it)
     if REMOTE.enabled:
         base = REMOTE.base_url()
-        url = f"{base}/api/webhook/{REMOTE.webhook_id}" if base else ""
+        url = f"{base}/api/webhook/{account.webhook_id}" if base else ""
     else:
         public, _ = normalize_public_url(SERVICES.options.get("public_url"))
-        url = f"{public}/{SERVICES.secret}/mcp" if public else ""
+        url = f"{public}/{account.secret}/mcp" if public else ""
     if not url:
         add("test_public", False, "@no_public")
     else:
@@ -1119,7 +1405,6 @@ class LoginError(Exception):
         self.detail = detail
 
 
-PENDING_MFA: dict = {}
 LOGIN_ATTEMPTS: list[float] = []
 MAX_LOGINS = 5            # per LOGIN_WINDOW – protects your Garmin account from a lockout
 LOGIN_WINDOW = 15 * 60
@@ -1133,10 +1418,6 @@ def _throttle_login() -> None:
     LOGIN_ATTEMPTS.append(now)
 
 
-def expire_pending_mfa() -> None:
-    """Drop a half-finished MFA login (it holds the password in memory)."""
-    if PENDING_MFA and time.time() - PENDING_MFA.get("started", 0) > MFA_TIMEOUT:
-        PENDING_MFA.clear()
 LOGIN_LOCK = threading.Lock()
 
 
@@ -1153,45 +1434,47 @@ def _translate_login_error(exc: Exception) -> LoginError:
     return LoginError("err_unknown", str(exc))
 
 
-def _finish_login(garmin: Garmin) -> str:
+def _finish_login(account: "Account", garmin: Garmin) -> str:
     """Store tokens, verify them and remember the account name."""
-    tmp = DATA / "garmin_tokens.new"
+    account.base.mkdir(mode=0o711, parents=True, exist_ok=True)
+    tmp = account.base / "garmin_tokens.new"
     shutil.rmtree(tmp, ignore_errors=True)
     tmp.mkdir(mode=0o700)
     garmin.client.dump(str(tmp))
     verify = Garmin()
     verify.login(str(tmp))
     name = verify.full_name or verify.display_name or ""
-    shutil.rmtree(TOKEN_DIR, ignore_errors=True)
-    tmp.rename(TOKEN_DIR)
-    secure_dir(TOKEN_DIR)
-    write_private(ACCOUNT_FILE, json.dumps({"name": name, "since": int(time.time())}))
-    log.info("Logged in to Garmin Connect")
-    AUTH_FAILED_FILE.unlink(missing_ok=True)
-    SERVICES.reset_login_state()
-    SERVICES.restart_mcp()
+    shutil.rmtree(account.token_dir, ignore_errors=True)
+    tmp.rename(account.token_dir)
+    secure_dir(account.token_dir)
+    write_private(account.info_file, json.dumps({"name": name, "since": int(time.time())}))
+    log.info("[%s] Logged in to Garmin Connect", name or account.id)
+    account.auth_failed_file.unlink(missing_ok=True)
+    account.reset_login_state()
+    account.restart_mcp()
+    remote = globals().get("REMOTE")
+    if remote is not None:
+        remote.nudge()  # the name shown in Home Assistant may have changed
     return name
 
 
-def start_login(email: str, password: str) -> str:
+def start_login(account: "Account", email: str, password: str) -> str:
     """Returns 'done' or 'mfa'. Raises LoginError."""
     with LOGIN_LOCK:
-        if has_tokens() and SERVICES.login_status() != "failed":
+        if account.has_tokens() and account.login_status() != "failed":
             # A second click while the first login was still running – don't
             # log in again (Garmin rate-limits repeated logins). A login that
             # Garmin rejects may be replaced right away (re-login).
             return "done"
-        PENDING_MFA.clear()
+        account.pending_mfa.clear()
         _throttle_login()
         try:
             garmin = Garmin(email=email, password=password, return_on_mfa=True)
             result, _state = garmin.client.login(email, password, return_on_mfa=True)
             if result == "needs_mfa":
-                PENDING_MFA.update(
-                    {"garmin": garmin, "state": _state, "started": time.time()}
-                )
+                account.pending_mfa.update({"garmin": garmin, "state": _state, "started": time.time()})
                 return "mfa"
-            _finish_login(garmin)
+            _finish_login(account, garmin)
             return "done"
         except LoginError:
             raise
@@ -1200,28 +1483,29 @@ def start_login(email: str, password: str) -> str:
             raise _translate_login_error(exc) from exc
 
 
-def finish_mfa(code: str) -> None:
+def finish_mfa(account: "Account", code: str) -> None:
     with LOGIN_LOCK:
-        if not PENDING_MFA or time.time() - PENDING_MFA["started"] > MFA_TIMEOUT:
-            PENDING_MFA.clear()
+        pending = account.pending_mfa
+        if not pending or time.time() - pending["started"] > MFA_TIMEOUT:
+            pending.clear()
             raise LoginError("err_mfa_expired")
-        garmin, state = PENDING_MFA["garmin"], PENDING_MFA["state"]
+        garmin, state = pending["garmin"], pending["state"]
         try:
             garmin.resume_login(state, code.strip())
-            _finish_login(garmin)
+            _finish_login(account, garmin)
         except Exception as exc:  # noqa: BLE001
             log.warning("Garmin MFA failed: %s", type(exc).__name__)
             raise _translate_login_error(exc) from exc
         finally:
-            PENDING_MFA.clear()
+            pending.clear()
 
 
-def logout() -> None:
-    SERVICES.stop_mcp()
-    shutil.rmtree(TOKEN_DIR, ignore_errors=True)
-    for path in (ACCOUNT_FILE, DATA / "garmin_tokens.b64", AUTH_FAILED_FILE):
+def logout(account: "Account") -> None:
+    account.stop_mcp()
+    shutil.rmtree(account.token_dir, ignore_errors=True)
+    for path in (account.info_file, account.base / "garmin_tokens.b64", account.auth_failed_file):
         path.unlink(missing_ok=True)
-    log.info("Logged out of Garmin Connect, tokens deleted")
+    log.info("[%s] Logged out of Garmin Connect, tokens deleted", account.id)
 
 
 # --------------------------------------------------------------------------
@@ -1243,6 +1527,12 @@ input{width:100%;padding:9px 11px;border:1px solid var(--border);border-radius:8
 button{margin-top:14px;padding:9px 16px;border:0;border-radius:8px;background:var(--accent);color:#fff;font-size:14px;cursor:pointer}
 @media (prefers-color-scheme:dark){button{color:#111}}
 button.secondary{background:transparent;color:var(--accent);border:1px solid var(--border)}
+button.danger{color:var(--err)}
+select{padding:8px 10px;border:1px solid var(--border);border-radius:8px;background:transparent;color:var(--text);font-size:15px}
+label.check{display:inline-flex;gap:6px;align-items:center;color:var(--text);font-size:14px;margin:6px 14px 0 0}
+label.check input{width:auto}
+details.rename summary{list-style:none;font-weight:normal;padding:0 4px}
+details.rename summary::-webkit-details-marker{display:none}
 .row{display:flex;gap:8px;align-items:center;flex-wrap:wrap}.row button{margin-top:0}
 code{display:block;padding:9px 11px;border-radius:8px;border:1px solid var(--border);word-break:break-all;font-size:13px;flex:1;min-width:0}
 h3{font-size:15px;margin:18px 0 8px}
@@ -1363,13 +1653,166 @@ def _secret_field(fid: str, value: str, t: dict) -> str:
     )
 
 
+def _csrf() -> str:
+    return f'<input type="hidden" name="csrf" value="{CSRF_TOKEN}">'
+
+
+def _acc_field(account: "Account") -> str:
+    return f'<input type="hidden" name="account" value="{html.escape(account.id, quote=True)}">'
+
+
+def _rights_rows(lang: str, t: dict, active: set[str]) -> str:
+    rows = []
+    for module in i18n.CATEGORY_ORDER:
+        tools_in = [e for e in CATALOG if e["module"] == module]
+        if not tools_in:
+            continue
+        on = [e for e in tools_in if e["name"] in active]
+        kinds = {e["kind"] for e in on}
+        badges = "".join(
+            f'<span class="badge {k}">{t["kind_" + k]}</span>' for k in ("read", "create", "change") if k in kinds
+        ) or f'<span class="muted">{t["nothing"]}</span>'
+        rows.append(
+            f'<tr><td>{html.escape(i18n.category(lang, module))}</td><td class="num">{len(on)}/{len(tools_in)}</td><td>{badges}</td></tr>'
+        )
+    return f'<table class="cats">{"".join(rows)}</table>'
+
+
+def _test_html(t: dict, result: dict) -> str:
+    if not result:
+        return ""
+    items = "".join(
+        f'<tr><td>{"⚠️" if c.get("warn") else "✅" if c["ok"] else "❌"}</td><td>{t[c["key"]]}</td>'
+        f'<td class="muted">{detail_text(t, c["detail"])}</td></tr>'
+        for c in result["checks"]
+    )
+    if not result["ok"]:
+        summary, cls = t["test_failed"], "err"
+    elif result.get("warn"):
+        summary, cls = t["test_warn"], "warn"
+    else:
+        summary, cls = t["test_ok"], "ok"
+    return f'<p class="{cls}">{summary} <span class="muted">({result["time"]})</span></p><table>{items}</table>'
+
+
+def _connector_url(account: "Account", base: str) -> str:
+    if REMOTE.enabled:
+        return f"{base or 'https://<your-home-assistant>'}/api/webhook/{account.webhook_id}"
+    public, _ = normalize_public_url(SERVICES.options.get("public_url"))
+    return f"{public or 'https://<your-domain>'}/{account.secret}/mcp"
+
+
+async def _account_card(request: Request, lang: str, t: dict, account: "Account", base: str) -> str:
+    csrf, acc = _csrf(), _acc_field(account)
+    name = html.escape(account.display_name() if (account.custom_name or account.garmin_name()) else t["account_n"].format(n=account.id))
+    garmin_name = account.garmin_name()
+    parts = ['<div class="card">']
+    parts.append(
+        f'<div class="row"><h2 style="margin:0">{name}</h2>'
+        f'<details class="rename"><summary title="{t["rename"]}" aria-label="{t["rename"]}">✏️</summary>'
+        f'<form method="post" action="accounts/rename">{csrf}{acc}'
+        f'<label>{t["rename"]}</label><input name="name" maxlength="40" value="{html.escape(account.custom_name, quote=True)}" '
+        f'placeholder="{html.escape(garmin_name or t["account_n"].format(n=account.id), quote=True)}">'
+        f'<p class="muted">{t["rename_hint"]}</p><button type="submit">{t["save_name"]}</button></form></details></div>'
+    )
+    if account.custom_name and garmin_name:
+        parts.append(f'<p class="muted" style="margin:4px 0 0">{t["garmin_profile"]}: {html.escape(garmin_name)}</p>')
+
+    # login
+    login_broken = account.has_tokens() and await anyio.to_thread.run_sync(account.login_status) == "failed"
+    login_form = (
+        f'<form method="post" action="login" onsubmit="return busy(this)">{csrf}{acc}'
+        f'<label>{t["email"]}</label><input name="email" type="email" autocomplete="username" required>'
+        f'<label>{t["password"]}</label><input name="password" type="password" autocomplete="current-password" required>'
+        f'<button type="submit" data-busy="{t["login_busy"]}">{{button}}</button>'
+        f'<p class="muted busy-note">{t["login_wait"]}</p></form>'
+    )
+    if account.pending_mfa:
+        parts.append(
+            f'<p>{t["mfa_hint"]}</p><form method="post" action="mfa" onsubmit="return busy(this)">{csrf}{acc}'
+            f'<label>{t["mfa_code"]}</label><input name="code" inputmode="numeric" autocomplete="one-time-code" required autofocus>'
+            f'<div class="row"><button type="submit" data-busy="{t["login_busy"]}">{t["confirm"]}</button>'
+            f'<button type="submit" class="secondary" formaction="cancel" formnovalidate>{t["cancel"]}</button></div></form>'
+        )
+    elif login_broken:
+        parts.append(
+            f'<p>{t["last_connected_as"]} <b>{html.escape(garmin_name or "–")}</b></p>'
+            f'<p class="err">{t["relogin_needed"]}</p>' + login_form.replace("{button}", t["relogin"])
+        )
+    elif account.has_tokens():
+        parts.append(f'<p>{t["connected_as"]} <b>{html.escape(garmin_name or "–")}</b></p>')
+        if account.options().get("write_access") != "read_only":
+            parts.append(f'<p class="muted">{t["upload_hint"]}</p>')
+    else:
+        parts.append(f'<p class="muted">{t["not_connected"]}</p>' + login_form.replace("{button}", t["login"]))
+
+    # server and rights
+    state = await anyio.to_thread.run_sync(account.shown_state)
+    state_cls = {"ready": "ok", "failed": "err", "pending": "warn", "off": "warn"}.get(state, "muted")
+    custom = account.selection_file().exists()
+    wa = account.options().get("write_access", "create_only")
+    rights = t["custom_selection"] if custom else t.get("wa_" + wa, wa)
+    parts.append(
+        f'<table><tr><td class="muted">{t["state"]}</td><td class="{state_cls}">{t["state_" + state]}</td></tr>'
+        f'<tr><td class="muted">{t["tools"]}</td><td>{len(account.active_tools)} / {len(ALL_TOOLS)}</td></tr>'
+        f'<tr><td class="muted">{t["write_access"]}</td><td>{rights}</td></tr></table>'
+    )
+    if not SERVICES.same_settings:
+        own = account.own_settings()
+        options = "".join(
+            f'<option value="{v}"{" selected" if own["write_access"] == v else ""}>{t["wa_" + v]}</option>'
+            for v in ("read_only", "create_only", "full")
+        )
+        areas = "".join(
+            f'<label class="check"><input type="checkbox" name="area" value="{a}"'
+            f'{" checked" if a in own["tool_areas"] else ""}> {t["area_" + a]}</label>'
+            for a in TOOL_AREAS
+        )
+        fresh = new_tools(account.selection_file())
+        parts.append(
+            f'<details><summary>{t["account_rights"]}</summary>'
+            + (f'<p class="warn">{t["new_tools_hint"].format(n=len(fresh))}</p>' if fresh else "")
+            + f'<h3>{t["what_ai_may"]}</h3>{_rights_rows(lang, t, account.active_tools)}'
+            f'<form method="post" action="accounts/settings" onsubmit="return busy(this)">{csrf}{acc}'
+            f'<label>{t["write_access"]}</label><select name="write_access">{options}</select>'
+            f'<label>{t["tool_areas"]}</label><div class="areas">{areas}</div>'
+            + (f'<p class="muted">{t["custom_selection_note"]}</p>' if custom else "")
+            + f'<div class="row"><button type="submit" data-busy="{t["restart_busy"]}">{t["save"]}</button>'
+            f'<a class="btn secondary" href="tools?account={html.escape(account.id)}">{t["choose_tools"]}</a></div></form></details>'
+        )
+
+    # connector URL
+    parts.append(f'<label>{t["connector_url"]}</label>{_secret_field("url" + account.id, _connector_url(account, base), t)}')
+    if REMOTE.enabled and not base:
+        parts.append(f'<p class="muted">{t["no_base_url"]}</p>')
+
+    # test, new URL, log out, remove
+    parts.append(_test_html(t, account.test_result))
+    parts.append(
+        '<div class="row">'
+        f'<form method="post" action="test" onsubmit="return busy(this)">{csrf}{acc}'
+        f'<button type="submit" class="secondary" data-busy="{t["test_busy"]}">{t["test_run"]}</button></form>'
+        f'<form method="post" action="rotate" onsubmit="return confirm(\'{t["rotate_confirm"]}\')">{csrf}{acc}'
+        f'<button type="submit" class="secondary">{t["rotate"]}</button></form>'
+        + (
+            f'<form method="post" action="logout" onsubmit="return confirm(\'{t["logout_confirm"]}\')">{csrf}{acc}'
+            f'<button type="submit" class="secondary">{t["logout"]}</button></form>'
+            if account.has_tokens() else ""
+        )
+        + f'<form method="post" action="accounts/remove" onsubmit="return confirm(\'{t["remove_confirm"]}\')">{csrf}{acc}'
+        f'<button type="submit" class="secondary danger">{t["remove_account"]}</button></form></div>'
+    )
+    parts.append("</div>")
+    return "".join(parts)
+
+
 async def index(request: Request) -> Response:
     if (denied := _guard(request)) is not None:
         return denied
     lang = _lang(request)
     t = i18n.ui(lang)
     services = SERVICES
-    csrf = f'<input type="hidden" name="csrf" value="{CSRF_TOKEN}">'
+    csrf = _csrf()
     parts = [f"<h1>{t['title']}</h1>"]
 
     if FLASH:
@@ -1381,126 +1824,67 @@ async def index(request: Request) -> Response:
 
     # Restart banner – shown above everything else
     if REMOTE.enabled and REMOTE.state == "restart_needed":
-        parts.append(
-            f'<div class="banner"><b>{t["restart_banner_title"]}</b><p>{t["restart_hint"]}</p></div>'
-        )
+        parts.append(f'<div class="banner"><b>{t["restart_banner_title"]}</b><p>{t["restart_hint"]}</p></div>')
+    accounts = list(services.accounts.values())
+    if len(accounts) >= LOAD_WARNING_FROM:
+        parts.append(f'<div class="banner">{t["load_warning"]}</div>')
 
-    # Account card
-    account = read_account()
-    login_broken = has_tokens() and await anyio.to_thread.run_sync(services.login_status) == "failed"
-    login_form = (
-        f'<form method="post" action="login" onsubmit="return busy(this)">{csrf}'
-        f'<label>{t["email"]}</label><input name="email" type="email" autocomplete="username" required>'
-        f'<label>{t["password"]}</label><input name="password" type="password" autocomplete="current-password" required>'
-        f'<button type="submit" data-busy="{t["login_busy"]}">{{button}}</button>'
-        f'<p class="muted busy-note">{t["login_wait"]}</p></form>'
-    )
-    logout_form = (
-        f'<form method="post" action="logout" onsubmit="return confirm(\'{t["logout_confirm"]}\')">{csrf}'
-        f'<button type="submit" class="secondary">{t["logout"]}</button></form>'
-    )
-    parts.append(f'<div class="card"><h2>{t["account"]}</h2>')
-    if PENDING_MFA:
-        parts.append(
-            f'<p>{t["mfa_hint"]}</p><form method="post" action="mfa" onsubmit="return busy(this)">{csrf}'
-            f'<label>{t["mfa_code"]}</label><input name="code" inputmode="numeric" autocomplete="one-time-code" required autofocus>'
-            f'<div class="row"><button type="submit" data-busy="{t["login_busy"]}">{t["confirm"]}</button>'
-            f'<button type="submit" class="secondary" formaction="cancel" formnovalidate>{t["cancel"]}</button></div></form>'
-        )
-    elif login_broken:
-        name = html.escape(account.get("name") or "–")
-        parts.append(
-            f'<p>{t["last_connected_as"]} <b>{name}</b></p>'
-            f'<p class="err">{t["relogin_needed"]}</p>'
-            + login_form.replace("{button}", t["relogin"])
-            + logout_form
-        )
-    elif has_tokens():
-        name = html.escape(account.get("name") or "–")
-        parts.append(
-            f'<p>{t["connected_as"]} <b>{name}</b></p>'
-            + (f'<p class="muted">{t["upload_hint"]}</p>' if services.options.get("write_access") != "read_only" else "")
-            + logout_form
-        )
+    base = await anyio.to_thread.run_sync(REMOTE.base_url) if REMOTE.enabled else ""
+    for account in accounts:
+        parts.append(await _account_card(request, lang, t, account, base))
+
+    # add an account
+    parts.append(f'<div class="card"><h2>{t["add_account"]}</h2>')
+    if len(accounts) >= MAX_ACCOUNTS:
+        parts.append(f'<p class="muted">{t["max_accounts"].format(n=MAX_ACCOUNTS)}</p>')
     else:
-        parts.append(f'<p class="muted">{t["not_connected"]}</p>' + login_form.replace("{button}", t["login"]))
+        parts.append(f'<p class="muted">{t["add_account_hint"]}</p>')
+        if len(accounts) + 1 >= LOAD_WARNING_FROM:
+            parts.append(f'<p class="warn">{t["load_warning"]}</p>')
+        parts.append(
+            f'<form method="post" action="accounts/add">{csrf}<button type="submit">{t["add_account"]}</button></form>'
+        )
     parts.append("</div>")
 
-    # Server card
-    state = await anyio.to_thread.run_sync(services.shown_state)
-    state_cls = {"ready": "ok", "failed": "err", "pending": "warn", "off": "warn"}.get(state, "muted")
+    # rights: shared or per account
+    same = services.same_settings
+    shared_env, shared_active = tool_selection(services.options, SELECTION_FILE)
+    del shared_env
     custom = SELECTION_FILE.exists()
     wa = services.options.get("write_access", "create_only")
     rights = t["custom_selection"] if custom else t.get("wa_" + wa, wa)
-    rows = []
-    for module in i18n.CATEGORY_ORDER:
-        tools_in = [e for e in CATALOG if e["module"] == module]
-        if not tools_in:
-            continue
-        on = [e for e in tools_in if e["name"] in services.active_tools]
-        kinds = {e["kind"] for e in on}
-        badges = "".join(
-            f'<span class="badge {k}">{t["kind_" + k]}</span>' for k in ("read", "create", "change") if k in kinds
-        ) or f'<span class="muted">{t["nothing"]}</span>'
-        rows.append(
-            f'<tr><td>{html.escape(i18n.category(lang, module))}</td><td class="num">{len(on)}/{len(tools_in)}</td><td>{badges}</td></tr>'
-        )
     parts.append(
-        f'<div class="card"><h2>{t["server"]}</h2><table>'
-        f'<tr><td class="muted">{t["state"]}</td><td class="{state_cls}">{t["state_" + state]}</td></tr>'
-        f'<tr><td class="muted">{t["tools"]}</td><td>{len(services.active_tools)} / {len(ALL_TOOLS)}</td></tr>'
-        f'<tr><td class="muted">{t["write_access"]}</td><td>{rights}</td></tr>'
-        f'</table>'
-        + (f'<p class="warn">{t["new_tools_hint"].format(n=len(fresh))} <a href="tools">{t["review"]}</a></p>' if (fresh := new_tools()) else "")
-        + (
-            f'<p class="warn">{t["unknown_tools"]} <code>{html.escape(", ".join(unknown))}</code></p>'
-            if not custom and (unknown := unknown_tool_names(services.options))
-            else ""
-        )
-        + f'<h3>{t["what_ai_may"]}</h3><table class="cats">{"".join(rows)}</table>'
-        f'<div class="row links"><a class="btn" href="tools">{t["choose_tools"]}</a>'
-        f'<a class="btn secondary" href="{_config_url()}" target="_top">{t["open_config"]}</a></div></div>'
+        f'<div class="card"><h2>{t["settings_title"]}</h2>'
+        f'<form method="post" action="settings/shared" onsubmit="return busy(this)">{csrf}'
+        f'<label class="check"><input type="checkbox" name="same" value="1"{" checked" if same else ""}> '
+        f'<b>{t["same_settings"]}</b></label>'
+        f'<p class="muted">{t["same_settings_on"] if same else t["same_settings_off"]}</p>'
+        f'<button type="submit" class="secondary" data-busy="{t["restart_busy"]}">{t["save"]}</button></form>'
     )
-
-    # Connection test card
-    test_html = ""
-    if TEST_RESULT:
-        items = "".join(
-            f'<tr><td>{"⚠️" if c.get("warn") else "✅" if c["ok"] else "❌"}</td><td>{t[c["key"]]}</td>'
-            f'<td class="muted">{detail_text(t, c["detail"])}</td></tr>'
-            for c in TEST_RESULT["checks"]
+    if same:
+        parts.append(
+            f'<table><tr><td class="muted">{t["tools"]}</td><td>{len(shared_active)} / {len(ALL_TOOLS)}</td></tr>'
+            f'<tr><td class="muted">{t["write_access"]}</td><td>{rights}</td></tr></table>'
+            + (f'<p class="warn">{t["new_tools_hint"].format(n=len(fresh))} <a href="tools">{t["review"]}</a></p>' if (fresh := new_tools()) else "")
+            + (
+                f'<p class="warn">{t["unknown_tools"]} <code>{html.escape(", ".join(unknown))}</code></p>'
+                if not custom and (unknown := unknown_tool_names(services.options))
+                else ""
+            )
+            + f'<h3>{t["what_ai_may"]}</h3>{_rights_rows(lang, t, shared_active)}'
+            f'<div class="row links"><a class="btn" href="tools">{t["choose_tools"]}</a>'
+            f'<a class="btn secondary" href="{_config_url()}" target="_top">{t["open_config"]}</a></div>'
         )
-        if not TEST_RESULT["ok"]:
-            summary, cls = t["test_failed"], "err"
-        elif TEST_RESULT.get("warn"):
-            summary, cls = t["test_warn"], "warn"
-        else:
-            summary, cls = t["test_ok"], "ok"
-        test_html = (
-            f'<p class="{cls}">{summary} <span class="muted">({TEST_RESULT["time"]})</span></p>'
-            f'<table>{items}</table>'
-        )
-    parts.append(
-        f'<div class="card"><h2>{t["test_title"]}</h2><p class="muted">{t["test_intro"]}</p>{test_html}'
-        f'<form method="post" action="test" onsubmit="return busy(this)">{csrf}'
-        f'<button type="submit" class="secondary" data-busy="{t["test_busy"]}">{t["test_run"]}</button></form></div>'
-    )
+    parts.append("</div>")
 
-    # Connection card
+    # remote access
     remote = REMOTE
     direct_public, url_problem = normalize_public_url(services.options.get("public_url"))
-    direct_url = f"{direct_public or 'https://<your-domain>'}/{services.secret}/mcp"
     internal = f"http://{socket.gethostname()}:{PUBLIC_PORT}"
-    rotate_form = (
-        f'<form method="post" action="rotate" onsubmit="return confirm(\'{t["rotate_confirm"]}\')">{csrf}'
-        f'<button type="submit" class="secondary">{t["rotate"]}</button></form>'
-    )
     parts.append(f'<div class="card"><h2>{t["connection"]}</h2>')
     if url_problem:
         parts.append(f'<p class="warn">{t["public_url_" + url_problem]}</p>')
     if remote.enabled:
-        base = await anyio.to_thread.run_sync(remote.base_url)
-        url = f"{base or 'https://<your-home-assistant>'}/api/webhook/{remote.webhook_id}"
         rstate = remote.state
         rcls = {"active": "ok", "error": "err", "restart_needed": "warn"}.get(rstate, "muted")
         parts.append(
@@ -1508,24 +1892,18 @@ async def index(request: Request) -> Response:
             f'<td class="{rcls}">{t["remote_" + rstate]}'
             + (f' <span class="muted">({detail_text(t, remote.detail)})</span>' if rstate == "error" and remote.detail else "")
             + "</td></tr></table>"
-        )
-        parts.append(
-            f'<label>{t["connector_url"]}</label>{_secret_field("url", url, t)}'
-            + ("" if base else f'<p class="muted">{t["no_base_url"]}</p>')
-            + f'<p class="warn">{t["secret_warning"]}</p><p>{t["steps"]}</p>'
-            f'<p class="muted">{t["oauth_hint"]}</p>{rotate_form}'
+            f'<p class="warn">{t["secret_warning"]}</p><p>{t["steps"]}</p><p class="muted">{t["oauth_hint"]}</p>'
         )
     else:
         if remote.cleaned_up:
             parts.append(f'<p class="ok">{t["cleaned_up"]}</p>')
         parts.append(
-            f'<label>{t["connector_url"]}</label>{_secret_field("url", direct_url, t)}'
-            + ("" if direct_public else f'<p class="muted">{t["no_public_url"]}</p>')
+            ("" if direct_public else f'<p class="muted">{t["no_public_url"]}</p>')
             + f'<p class="warn">{t["secret_warning"]}</p><p>{t["steps"]}</p>'
             f'<label>{t["internal_url"]}</label><div class="row"><code>{html.escape(internal)}</code></div>'
-            f'<p class="muted">{t["internal_hint"]}</p>{rotate_form}'
+            f'<p class="muted">{t["internal_hint"]}</p>'
         )
-    parts.append("</div>")
+    parts.append(f'<p class="muted">{t["admins_note"]}</p></div>')
 
     parts.append(
         f'<p class="muted footer">Garmin Connect MCP {html.escape(os.environ.get("APP_VERSION", "dev"))}'
@@ -1533,47 +1911,62 @@ async def index(request: Request) -> Response:
         + (f" · {links}" if (links := _language_links(request, lang)) else "")
         + "</p>"
     )
-    body = "".join(parts)
+    shown = await anyio.to_thread.run_sync(page_status)
+    waiting = (
+        any(a.shown_state() == "pending" for a in accounts) or REMOTE.state == "setting_up"
+    ) and not any(a.pending_mfa for a in accounts)
     page = (
-        f'<!doctype html><html lang="{_lang(request)}"><head><meta charset="utf-8">'
+        f'<!doctype html><html lang="{lang}"><head><meta charset="utf-8">'
         f'<meta name="viewport" content="width=device-width,initial-scale=1">'
         f"<title>{t['title']}</title><style>{CSS}</style></head>"
-        f"<body><main>{body}</main><script>{JS}</script>"
-        # While the server or remote access is still starting, check the status
+        f"<body><main>{''.join(parts)}</main><script>{JS}</script>"
+        # While a server or remote access is still starting, check the status
         # every few seconds and reload only when it changed – and never while
         # the user is typing into a form (login, 2FA code).
-        + (f"<script>const SHOWN={json.dumps(page_status(state))};{STATUS_POLL_JS}</script>"
-           if (state == "pending" or REMOTE.state == "setting_up") and not PENDING_MFA else "")
+        + (f"<script>const SHOWN={json.dumps(shown)};{STATUS_POLL_JS}</script>" if waiting else "")
         + "</body></html>"
     )
     return HTMLResponse(page, headers={"Cache-Control": "no-store", "X-Frame-Options": "SAMEORIGIN"})
 
 
+async def _account_form(request: Request) -> tuple[dict, "Account"] | None:
+    """Form of an account card: CSRF checked, account looked up."""
+    form = await _form(request)
+    if form is None:
+        return None
+    try:
+        return form, SERVICES.account(form.get("account"))
+    except AccountError as exc:
+        FLASH.update(kind="err", key=exc.key)
+        return None
+
+
 async def do_login(request: Request) -> Response:
     if (denied := _guard(request)) is not None:
         return denied
-    form = await _form(request)
-    if form is not None:
+    if (got := await _account_form(request)) is not None:
+        form, account = got
         email = str(form.get("email", "")).strip()
         password = str(form.get("password", ""))
         try:
-            result = await anyio.to_thread.run_sync(start_login, email, password)
+            result = await anyio.to_thread.run_sync(start_login, account, email, password)
             if result == "done":
                 FLASH.update(kind="ok", key="ok_login")
         except LoginError as exc:
             FLASH.update(kind="err", key=exc.key, detail=exc.detail[:200])
         finally:
             password = ""
+            form.pop("password", None)
     return _redirect(request)
 
 
 async def do_mfa(request: Request) -> Response:
     if (denied := _guard(request)) is not None:
         return denied
-    form = await _form(request)
-    if form is not None:
+    if (got := await _account_form(request)) is not None:
+        form, account = got
         try:
-            await anyio.to_thread.run_sync(finish_mfa, str(form.get("code", "")))
+            await anyio.to_thread.run_sync(finish_mfa, account, str(form.get("code", "")))
             FLASH.update(kind="ok", key="ok_login")
         except LoginError as exc:
             FLASH.update(kind="err", key=exc.key, detail=exc.detail[:200])
@@ -1583,16 +1976,16 @@ async def do_mfa(request: Request) -> Response:
 async def do_cancel(request: Request) -> Response:
     if (denied := _guard(request)) is not None:
         return denied
-    if await _form(request) is not None:
-        PENDING_MFA.clear()
+    if (got := await _account_form(request)) is not None:
+        got[1].pending_mfa.clear()
     return _redirect(request)
 
 
 async def do_logout(request: Request) -> Response:
     if (denied := _guard(request)) is not None:
         return denied
-    if await _form(request) is not None:
-        await anyio.to_thread.run_sync(logout)
+    if (got := await _account_form(request)) is not None:
+        await anyio.to_thread.run_sync(logout, got[1])
         FLASH.update(kind="ok", key="ok_logout")
     return _redirect(request)
 
@@ -1600,32 +1993,104 @@ async def do_logout(request: Request) -> Response:
 async def do_rotate(request: Request) -> Response:
     if (denied := _guard(request)) is not None:
         return denied
-    if await _form(request) is not None:
-        await anyio.to_thread.run_sync(SERVICES.rotate_secret)
-        REMOTE.rotate()
+    if (got := await _account_form(request)) is not None:
+        account = got[1]
+        await anyio.to_thread.run_sync(SERVICES.rotate_secret, account)
+        REMOTE.rotate(account)
         FLASH.update(kind="ok", key="ok_rotate")
     return _redirect(request)
 
 
-def page_status(server_state: str) -> str:
+async def do_test(request: Request) -> Response:
+    if (denied := _guard(request)) is not None:
+        return denied
+    if (got := await _account_form(request)) is not None:
+        account = got[1]
+        account.test_result.clear()
+        account.test_result.update(await anyio.to_thread.run_sync(run_connection_test, account))
+    return _redirect(request)
+
+
+async def add_account(request: Request) -> Response:
+    if (denied := _guard(request)) is not None:
+        return denied
+    if await _form(request) is not None:
+        try:
+            await anyio.to_thread.run_sync(SERVICES.add_account)
+            REMOTE.nudge()
+            FLASH.update(kind="ok", key="ok_account_added")
+        except AccountError as exc:
+            FLASH.update(kind="err", key=exc.key)
+    return _redirect(request)
+
+
+async def remove_account(request: Request) -> Response:
+    if (denied := _guard(request)) is not None:
+        return denied
+    if (got := await _account_form(request)) is not None:
+        await anyio.to_thread.run_sync(SERVICES.remove_account, got[1])
+        REMOTE.nudge()
+        FLASH.update(kind="ok", key="ok_account_removed")
+    return _redirect(request)
+
+
+async def rename_account(request: Request) -> Response:
+    if (denied := _guard(request)) is not None:
+        return denied
+    if (got := await _account_form(request)) is not None:
+        form, account = got
+        await anyio.to_thread.run_sync(SERVICES.rename_account, account, str(form.get("name", "")))
+        REMOTE.nudge()
+        FLASH.update(kind="ok", key="ok_renamed")
+    return _redirect(request)
+
+
+async def account_settings(request: Request) -> Response:
+    if (denied := _guard(request)) is not None:
+        return denied
+    form = await request.form()
+    if not secrets.compare_digest(str(form.get("csrf", "")), CSRF_TOKEN):
+        FLASH.update(kind="err", key="err_csrf")
+        return _redirect(request)
+    try:
+        account = SERVICES.account(form.get("account"))
+    except AccountError as exc:
+        FLASH.update(kind="err", key=exc.key)
+        return _redirect(request)
+    account.save_own_settings(str(form.get("write_access", "")), [str(a) for a in form.getlist("area")])
+    await anyio.to_thread.run_sync(account.reload_tools)
+    FLASH.update(kind="ok", key="ok_rights")
+    return _redirect(request)
+
+
+async def shared_settings(request: Request) -> Response:
+    if (denied := _guard(request)) is not None:
+        return denied
+    if (form := await _form(request)) is not None:
+        await anyio.to_thread.run_sync(SERVICES.set_same_settings, form.get("same") == "1")
+        FLASH.update(kind="ok", key="ok_same_settings")
+    return _redirect(request)
+
+
+def page_status() -> str:
     """Status as the page shows it – compared with status.json by STATUS_POLL_JS."""
-    return "|".join([server_state, REMOTE.state, "true" if has_tokens() else "false"])
+    states = [f"{a.id}:{a.shown_state()}:{int(a.has_tokens())}" for a in SERVICES.accounts.values()]
+    return "|".join([*states, REMOTE.state])
 
 
 STATUS_POLL_JS = """
 (function(){
-  // SHOWN: the status this page was rendered with (same format as below)
+  // SHOWN: the status this page was rendered with (same format as status.json "state")
   function busyTyping(){
     const a=document.activeElement;
-    if(a&&(a.tagName==='INPUT'||a.tagName==='TEXTAREA'))return true;
-    return Array.from(document.querySelectorAll('input:not([type=hidden])')).some(i=>i.value);
+    if(a&&(a.tagName==='INPUT'||a.tagName==='TEXTAREA'||a.tagName==='SELECT'))return true;
+    return Array.from(document.querySelectorAll('input:not([type=hidden]):not([type=checkbox]):not([name=name])')).some(i=>i.value);
   }
   async function poll(){
     try{
       const r=await fetch('status.json',{cache:'no-store'});
       const s=await r.json();
-      const now=[s.server,s.remote,s.logged_in].join('|');
-      if(now!==SHOWN&&!busyTyping()&&!document.querySelector('form[data-busy]')){location.reload();return}
+      if(s.state!==SHOWN&&!busyTyping()&&!document.querySelector('form[data-busy]')){location.reload();return}
     }catch(e){}
     setTimeout(poll,5000);
   }
@@ -1656,20 +2121,34 @@ document.addEventListener('change',e=>{if(e.target.matches('.tool input'))count(
 """
 
 
+def _tools_target(account_id) -> tuple["Account | None", Path, set[str]]:
+    """(account or None for the shared choice, selection file, active tools)."""
+    if account_id and not SERVICES.same_settings:
+        account = SERVICES.account(account_id)
+        return account, account.own_selection_file, account.active_tools
+    _env, active = tool_selection(SERVICES.options, SELECTION_FILE)
+    return None, SELECTION_FILE, active
+
+
 async def tools_page(request: Request) -> Response:
     if (denied := _guard(request)) is not None:
         return denied
     lang = _lang(request)
     t = i18n.ui(lang)
-    active = SERVICES.active_tools
-    csrf = f'<input type="hidden" name="csrf" value="{CSRF_TOKEN}">'
-    parts = [f'<p><a href="./">{t["back"]}</a></p><h1>{t["tools_title"]}</h1>']
+    try:
+        account, selection_file, active = _tools_target(request.query_params.get("account"))
+    except AccountError:
+        return _redirect(request)
+    csrf = _csrf()
+    title = t["tools_title"] + (f" – {html.escape(account.display_name())}" if account else "")
+    parts = [f'<p><a href="./">{t["back"]}</a></p><h1>{title}</h1>']
     if FLASH:
         parts.append(f'<div class="flash {FLASH.get("kind", "ok")}">{t.get(FLASH.get("key", ""), "")}</div>')
         FLASH.clear()
-    fresh = set(new_tools())
+    fresh = set(new_tools(selection_file))
     if fresh:
         parts.append(f'<div class="banner">{t["new_tools_banner"].format(n=len(fresh))}</div>')
+    acc = _acc_field(account) if account else ""
     parts.append(
         f'<p class="muted">{t["tools_intro"]}</p>'
         f'<div class="toolbar"><input type="search" placeholder="{t["search"]}" oninput="filt(this.value)">'
@@ -1678,7 +2157,7 @@ async def tools_page(request: Request) -> Response:
         f'<button type="button" class="secondary" onclick="preset([\'read\',\'create\'])">{t["preset_create"]}</button>'
         f'<button type="button" class="secondary" onclick="preset([\'read\',\'create\',\'change\'])">{t["preset_all"]}</button>'
         f'<button type="button" class="secondary" onclick="preset([])">{t["preset_none"]}</button></div></div>'
-        f'<form method="post" action="tools" onsubmit="return busy(this)">{csrf}'
+        f'<form method="post" action="tools" onsubmit="return busy(this)">{csrf}{acc}'
     )
     for module in i18n.CATEGORY_ORDER:
         cat = i18n.category(lang, module)
@@ -1696,8 +2175,7 @@ async def tools_page(request: Request) -> Response:
                 f'<div class="txt"><label for="t_{e["name"]}" style="margin:0;color:inherit;font-size:14px">{html.escape(label)}</label>'
                 f' <span class="badge {e["kind"]}">{t["kind_" + e["kind"]]}</span>'
                 + (f' <span class="badge new">{t["new"]}</span>' if e["name"] in fresh else "")
-                +
-                f'<div class="infobox"><b>{t["info_name"]}:</b> <code>{e["name"]}</code><br>'
+                + f'<div class="infobox"><b>{t["info_name"]}:</b> <code>{e["name"]}</code><br>'
                 f'<b>{t["info_kind"]}:</b> {t["info_kind_" + e["kind"]]}'
                 + (f'<br><b>{t["info_original"]}:</b> {html.escape(e["doc"])}' if e["doc"] and e["doc"].rstrip(".") != label.rstrip(".") else "")
                 + '</div></div>'
@@ -1708,12 +2186,17 @@ async def tools_page(request: Request) -> Response:
         f'<div class="savebar"><button type="submit" data-busy="{t["restart_busy"]}">{t["save"]}</button>'
         f'<span class="muted"><span id="cnt"></span> / {len(CATALOG)} {t["selected"]}</span></div></form>'
     )
-    if SELECTION_FILE.exists():
+    if selection_file.exists():
         parts.append(
-            f'<form method="post" action="tools/reset" onsubmit="return confirm(\'{t["reset_confirm"]}\')">{csrf}'
+            f'<form method="post" action="tools/reset" onsubmit="return confirm(\'{t["reset_confirm"]}\')">{csrf}{acc}'
             f'<button type="submit" class="secondary">{t["reset"]}</button></form>'
         )
     return _page(request, t, "".join(parts), TOOLS_JS)
+
+
+def _reload_after_tool_change(account: "Account | None") -> None:
+    for target in [account] if account else list(SERVICES.accounts.values()):
+        target.reload_tools()
 
 
 async def save_tools(request: Request) -> Response:
@@ -1722,33 +2205,31 @@ async def save_tools(request: Request) -> Response:
     form = await request.form()
     if not secrets.compare_digest(str(form.get("csrf", "")), CSRF_TOKEN):
         FLASH.update(kind="err", key="err_csrf")
-    else:
-        picked = {str(v) for v in form.getlist("tool")} & ALL_TOOLS
-        save_selection(picked)
-        log.info("Tool selection saved (%d tools)", len(picked))
-        await anyio.to_thread.run_sync(SERVICES.reload_tools)
-        FLASH.update(kind="ok", key="ok_tools")
-    base = request.headers.get("x-ingress-path", "")
-    return RedirectResponse(f"{base}/", status_code=303)
+        return _redirect(request)
+    try:
+        account, selection_file, _active = _tools_target(form.get("account"))
+    except AccountError as exc:
+        FLASH.update(kind="err", key=exc.key)
+        return _redirect(request)
+    picked = {str(v) for v in form.getlist("tool")} & ALL_TOOLS
+    save_selection(picked, selection_file)
+    log.info("Tool selection saved (%d tools)", len(picked))
+    await anyio.to_thread.run_sync(_reload_after_tool_change, account)
+    FLASH.update(kind="ok", key="ok_tools")
+    return _redirect(request)
 
 
 async def reset_tools(request: Request) -> Response:
     if (denied := _guard(request)) is not None:
         return denied
-    if await _form(request) is not None:
-        SELECTION_FILE.unlink(missing_ok=True)
-        await anyio.to_thread.run_sync(SERVICES.reload_tools)
+    if (form := await _form(request)) is not None:
+        try:
+            account, selection_file, _active = _tools_target(form.get("account"))
+        except AccountError:
+            return _redirect(request)
+        selection_file.unlink(missing_ok=True)
+        await anyio.to_thread.run_sync(_reload_after_tool_change, account)
         FLASH.update(kind="ok", key="ok_tools_reset")
-    base = request.headers.get("x-ingress-path", "")
-    return RedirectResponse(f"{base}/tools", status_code=303)
-
-
-async def do_test(request: Request) -> Response:
-    if (denied := _guard(request)) is not None:
-        return denied
-    if await _form(request) is not None:
-        TEST_RESULT.clear()
-        TEST_RESULT.update(await anyio.to_thread.run_sync(run_connection_test))
     return _redirect(request)
 
 
@@ -1764,16 +2245,20 @@ async def set_language(request: Request) -> Response:
     return response
 
 
-async def report(request: Request) -> Response:
-    """Status report of the helper integration, forwarded by nginx.
-
-    nginx adds the key (the secret) – only it knows the secret, so neither the
-    MCP server inside the container nor anything else can fake a report."""
+def _report_key_ok(request: Request) -> bool:
+    """nginx adds the key – only it knows it, so neither an MCP server inside
+    the container nor anything else can fake a report or a stand-in answer."""
+    services = globals().get("SERVICES")
     key = request.headers.get("x-report-key", "")
-    remote, services = globals().get("REMOTE"), globals().get("SERVICES")
-    if remote is None or services is None or not remote.enabled or not services.secret:
-        return Response("Forbidden", status_code=403)
-    if not secrets.compare_digest(key.encode(), services.secret.encode()):
+    return bool(services is not None and services.report_secret) and secrets.compare_digest(
+        key.encode(), services.report_secret.encode()
+    )
+
+
+async def report(request: Request) -> Response:
+    """Status report of the helper integration, forwarded by nginx."""
+    remote = globals().get("REMOTE")
+    if remote is None or not remote.enabled or not _report_key_ok(request):
         return Response("Forbidden", status_code=403)
     body = await request.body()
     if len(body) > 4096:
@@ -1790,19 +2275,20 @@ async def report(request: Request) -> Response:
 
 NOT_READY_TEXT = {
     "logged_out": (
-        "Garmin Connect is not connected: the Home Assistant app 'Garmin Connect MCP' is not "
-        "logged in. Ask the user to open 'Garmin MCP' in the Home Assistant sidebar and log in "
-        "to Garmin Connect, then try again."
+        "Garmin Connect is not connected: this Garmin account is not logged in in the Home "
+        "Assistant app 'Garmin Connect MCP'. Ask the user to open 'Garmin MCP' in the Home "
+        "Assistant sidebar and log in to Garmin Connect, then try again."
     ),
     "failed": (
-        "The Garmin Connect login of the Home Assistant app 'Garmin Connect MCP' is no longer "
-        "valid. Ask the user to open 'Garmin MCP' in the Home Assistant sidebar and log in to "
-        "Garmin Connect again."
+        "The Garmin Connect login of this account in the Home Assistant app 'Garmin Connect MCP' "
+        "is no longer valid. Ask the user to open 'Garmin MCP' in the Home Assistant sidebar and "
+        "log in to Garmin Connect again."
     ),
     "starting": "The Garmin Connect MCP server is starting. Try again in a minute.",
     "off": (
-        "The Garmin Connect MCP server is switched off in Home Assistant. Ask the user to turn "
-        "on the switch 'Garmin Connect MCP Server' in Home Assistant, then try again."
+        "The Garmin Connect MCP server of this Garmin account is switched off in Home Assistant. "
+        "Ask the user to turn on its switch ('Garmin Connect MCP … Server') in Home Assistant, then "
+        "try again."
     ),
 }
 
@@ -1841,11 +2327,10 @@ def not_ready_answer(message: dict, reason: str) -> dict | None:
 
 
 async def mcp_unavailable(request: Request) -> Response:
-    """Stand-in MCP endpoint while the Garmin server is not running (via nginx only)."""
-    services = globals().get("SERVICES")
-    key = request.headers.get("x-report-key", "")
-    if services is None or not services.secret or not secrets.compare_digest(key.encode(), services.secret.encode()):
+    """Stand-in MCP endpoint while an account's Garmin server is not running (via nginx only)."""
+    if not _report_key_ok(request):
         return Response("Forbidden", status_code=403)
+    account = SERVICES.accounts.get(str(request.path_params.get("account", "")))
     if request.method != "POST":
         return Response(status_code=405, headers={"Allow": "POST"})
     body = await request.body()
@@ -1853,10 +2338,10 @@ async def mcp_unavailable(request: Request) -> Response:
         data = json.loads(body or b"{}")
     except ValueError:
         return JSONResponse({"jsonrpc": "2.0", "id": None, "error": {"code": -32700, "message": "Parse error"}})
-    status_now = await anyio.to_thread.run_sync(services.login_status)
+    status_now = await anyio.to_thread.run_sync(account.login_status) if account else "logged_out"
     reason = status_now if status_now in NOT_READY_TEXT else "starting"
     if isinstance(data, list):
-        answers = [a for a in (not_ready_answer(m, reason) for m in data) if a is not None]
+        answers = [a for a in (not_ready_answer(m, reason) for m in data[:50]) if a is not None]
         return JSONResponse(answers) if answers else Response(status_code=202)
     answer = not_ready_answer(data, reason)
     return JSONResponse(answer) if answer is not None else Response(status_code=202)
@@ -1865,14 +2350,15 @@ async def mcp_unavailable(request: Request) -> Response:
 async def status(request: Request) -> Response:
     if (denied := _guard(request, allow_local=True)) is not None:
         return denied
-    state = await anyio.to_thread.run_sync(SERVICES.shown_state)
+    state = await anyio.to_thread.run_sync(page_status)
     return JSONResponse(
         {
-            "logged_in": has_tokens(),
-            "server": state,
+            "state": state,
             "remote": REMOTE.state if globals().get("REMOTE") is not None else "",
-            "active_tools": sorted(SERVICES.active_tools),
-            "write_access": SERVICES.options.get("write_access"),
+            "accounts": [
+                {"id": a.id, "logged_in": a.has_tokens(), "switched_off": a.switched_off, "tools": len(a.active_tools)}
+                for a in SERVICES.accounts.values()
+            ],
         }
     )
 
@@ -1920,7 +2406,12 @@ app = Starlette(
         Route("/status.json", status),
         Route("/lang", set_language),
         Route("/report", report, methods=["POST"]),
-        Route("/mcp-unavailable", mcp_unavailable, methods=["GET", "POST"]),
+        Route("/mcp-unavailable/{account}", mcp_unavailable, methods=["GET", "POST"]),
+        Route("/accounts/add", add_account, methods=["POST"]),
+        Route("/accounts/remove", remove_account, methods=["POST"]),
+        Route("/accounts/rename", rename_account, methods=["POST"]),
+        Route("/accounts/settings", account_settings, methods=["POST"]),
+        Route("/settings/shared", shared_settings, methods=["POST"]),
         Route("/tools", tools_page),
         Route("/tools", save_tools, methods=["POST"]),
         Route("/tools/reset", reset_tools, methods=["POST"]),
@@ -1948,7 +2439,7 @@ def main() -> None:
         )
     SERVICES = Services()
     SERVICES.start_nginx()
-    SERVICES.start_mcp()
+    SERVICES.start_all()
     threading.Thread(target=SERVICES.supervise, name="supervisor", daemon=True).start()
     global REMOTE
     REMOTE = RemoteAccess(SERVICES)

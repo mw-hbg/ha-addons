@@ -109,11 +109,22 @@ def test_secret_path_is_long_random_and_stable():
     assert rotated != first
 
 
-def test_nginx_only_forwards_the_secret_path():
-    conf = L.NGINX_TEMPLATE.format(public_port=8100, mcp_port=8000, secret="S3CRET", report_location="", ui_port=8099)
-    assert "location = /S3CRET/mcp" in conf
-    assert "return 404" in conf
-    assert "access_log off" in conf
+def test_nginx_only_forwards_the_secret_paths(monkeypatch, tmp_path):
+    monkeypatch.setattr(L, "NGINX_CONF", tmp_path / "nginx.conf")
+    services = L.Services()
+    second = services.add_account()
+    for account in services.accounts.values():
+        account.proxy_conf = tmp_path / f"proxy-{account.id}.conf"
+    services.write_nginx_conf()
+    conf = (tmp_path / "nginx.conf").read_text()
+    first = services.primary
+    for account in (first, second):
+        assert f"location = /{account.secret}/mcp" in conf
+        assert f"rewrite ^ /mcp-unavailable/{account.id} break" in conf
+    assert first.secret != second.secret and first.port != second.port
+    assert f"127.0.0.1:{second.port}/mcp" in second.proxy_conf.read_text()
+    assert f"@unavailable_{second.id}" in second.proxy_conf.read_text()
+    assert "return 404" in conf and "access_log off" in conf
 
 
 # --- remote access clean-up (direct mode) ---------------------------------------
@@ -194,25 +205,31 @@ def test_stand_in_answers_mcp_messages(monkeypatch):
     from starlette.testclient import TestClient
 
     services = L.Services()
+    account = services.primary
     monkeypatch.setattr(L, "SERVICES", services, raising=False)
-    monkeypatch.setattr(services, "login_status", lambda: "logged_out")
-    key = {"X-Report-Key": services.secret}
+    monkeypatch.setattr(account, "login_status", lambda: "logged_out")
+    key = {"X-Report-Key": services.report_secret}
+    url = f"/mcp-unavailable/{account.id}"
     with TestClient(L.app, client=("127.0.0.1", 50000)) as client:
-        assert client.post("/mcp-unavailable", json={"jsonrpc": "2.0", "id": 1, "method": "initialize"}).status_code == 403
-        init = client.post("/mcp-unavailable", headers=key,
+        assert client.post(url, json={"jsonrpc": "2.0", "id": 1, "method": "initialize"}).status_code == 403
+        assert client.post(url, headers={"X-Report-Key": account.secret}, json={}).status_code == 403
+        init = client.post(url, headers=key,
                            json={"jsonrpc": "2.0", "id": 1, "method": "initialize", "params": {"protocolVersion": "2025-06-18"}}).json()
         assert init["result"]["protocolVersion"] == "2025-06-18" and "not logged in" in init["result"]["instructions"]
-        tools = client.post("/mcp-unavailable", headers=key, json={"jsonrpc": "2.0", "id": 2, "method": "tools/list"}).json()
+        tools = client.post(url, headers=key, json={"jsonrpc": "2.0", "id": 2, "method": "tools/list"}).json()
         assert tools["result"]["tools"][0]["name"] == "garmin_connection_status"
-        call = client.post("/mcp-unavailable", headers=key,
+        call = client.post(url, headers=key,
                            json={"jsonrpc": "2.0", "id": "x", "method": "tools/call", "params": {"name": "get_activities"}}).json()
         assert call["id"] == "x" and call["result"]["isError"] and "log in" in call["result"]["content"][0]["text"]
-        note = client.post("/mcp-unavailable", headers=key, json={"jsonrpc": "2.0", "method": "notifications/initialized"})
+        note = client.post(url, headers=key, json={"jsonrpc": "2.0", "method": "notifications/initialized"})
         assert note.status_code == 202
-        monkeypatch.setattr(services, "login_status", lambda: "failed")
-        call = client.post("/mcp-unavailable", headers=key, json={"jsonrpc": "2.0", "id": 3, "method": "tools/call"}).json()
+        monkeypatch.setattr(account, "login_status", lambda: "failed")
+        call = client.post(url, headers=key, json={"jsonrpc": "2.0", "id": 3, "method": "tools/call"}).json()
         assert "no longer valid" in call["result"]["content"][0]["text"]
-        assert client.get("/mcp-unavailable", headers=key).status_code == 405
+        assert client.get(url, headers=key).status_code == 405
+        # an account that does not exist (any more): "not logged in"
+        gone = client.post("/mcp-unavailable/99", headers=key, json={"jsonrpc": "2.0", "id": 4, "method": "tools/call"}).json()
+        assert "not logged in" in gone["result"]["content"][0]["text"]
 
 
 def test_nginx_accepts_the_generated_configuration(tmp_path, monkeypatch):
@@ -223,9 +240,10 @@ def test_nginx_accepts_the_generated_configuration(tmp_path, monkeypatch):
     if not shutil.which("nginx"):
         pytest.skip("nginx not installed")
     monkeypatch.setattr(L, "NGINX_CONF", tmp_path / "nginx.conf")
-    monkeypatch.setattr(L, "NGINX_PROXY_CONF", tmp_path / "proxy.conf")
-    monkeypatch.setattr(L, "NGINX_TEMPLATE", L.NGINX_TEMPLATE.replace("/tmp/garmin-mcp-proxy.conf", str(tmp_path / "proxy.conf")))
     services = L.Services()
+    services.add_account()
+    for account in services.accounts.values():
+        account.proxy_conf = tmp_path / f"proxy-{account.id}.conf"
     services.write_nginx_conf()
     result = subprocess.run(["nginx", "-t", "-e", "stderr", "-c", str(tmp_path / "nginx.conf")], capture_output=True, text=True)
     assert result.returncode == 0, result.stderr
@@ -242,12 +260,11 @@ def test_page_status_matches_status_json(monkeypatch):
     monkeypatch.setattr(L, "SERVICES", services, raising=False)
     monkeypatch.setattr(L, "REMOTE", remote, raising=False)
     monkeypatch.setattr(L, "ALLOW_ANY_UI_CLIENT", True)
-    monkeypatch.setattr(services, "mcp_state", lambda: "ready")
-    monkeypatch.setattr(L, "has_tokens", lambda: True)
+    monkeypatch.setattr(services.primary, "mcp_state", lambda: "ready")
+    monkeypatch.setattr(services.primary, "has_tokens", lambda: True)
     with TestClient(L.app) as client:
         s = client.get("/status.json").json()
-    js_join = "|".join([s["server"], s["remote"], "true" if s["logged_in"] is True else "false"])
-    assert js_join == L.page_status("ready") == "ready|active|true"
+    assert s["state"] == L.page_status() == "1:ready:1|active"
 
 
 # --- login rejected by Garmin: log in again without logging out first ----------------
@@ -259,9 +276,10 @@ def _page_setup(monkeypatch, login_status):
     monkeypatch.setattr(L, "SERVICES", services, raising=False)
     monkeypatch.setattr(L, "REMOTE", remote, raising=False)
     monkeypatch.setattr(L, "ALLOW_ANY_UI_CLIENT", True)
-    monkeypatch.setattr(L, "has_tokens", lambda: True)
-    monkeypatch.setattr(services, "mcp_state", lambda: "ready")
-    monkeypatch.setattr(services, "login_status", lambda: login_status)
+    account = services.primary
+    monkeypatch.setattr(account, "has_tokens", lambda: True)
+    monkeypatch.setattr(account, "mcp_state", lambda: "ready")
+    monkeypatch.setattr(account, "login_status", lambda: login_status)
     return services
 
 
@@ -289,10 +307,10 @@ def test_relogin_is_allowed_only_when_the_login_is_broken(monkeypatch):
 
     monkeypatch.setattr(L, "Garmin", FakeGarmin)
     L.LOGIN_ATTEMPTS.clear()
-    _page_setup(monkeypatch, "ok")
-    assert L.start_login("a@b.c", "pw") == "done" and tried == []  # double click guard
-    _page_setup(monkeypatch, "failed")
+    services = _page_setup(monkeypatch, "ok")
+    assert L.start_login(services.primary, "a@b.c", "pw") == "done" and tried == []  # double click guard
+    services = _page_setup(monkeypatch, "failed")
     with pytest.raises(L.LoginError):
-        L.start_login("a@b.c", "pw")
+        L.start_login(services.primary, "a@b.c", "pw")
     assert tried == ["a@b.c"]
     L.LOGIN_ATTEMPTS.clear()

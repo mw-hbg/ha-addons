@@ -1,5 +1,33 @@
 # Changelog
 
+## Unreleased
+
+- New: **several Garmin accounts** in one app – up to 10, e.g. the whole household. Every
+  account has its own Garmin login, connector URL, connection test, device and switch in
+  Home Assistant and repair notice, and its own Garmin server running as its own
+  unprivileged user (no account can read another one's tokens). Name from the Garmin
+  profile, changeable with ✏️. From the 4th account the page warns about the load.
+- New: **Same settings for all accounts** (default) – or write access, areas and tools per
+  account.
+- Updating: your existing login becomes the first account – same connector URL, same switch
+  (`switch.garmin_connect_mcp_server`). Helper integration 0.5.0, so Home Assistant asks for
+  one restart. Note: every Home Assistant administrator sees all accounts on the app page.
+
+---
+
+- Neu: **mehrere Garmin-Konten** in einer App – bis zu 10, z. B. der ganze Haushalt. Jedes
+  Konto hat eine eigene Garmin-Anmeldung, Connector-URL, einen eigenen Verbindungstest,
+  ein eigenes Gerät mit Schalter und einen eigenen Reparatur-Hinweis in Home Assistant
+  sowie einen eigenen Garmin-Server, der als eigener eingeschränkter Benutzer läuft (kein
+  Konto kann die Tokens eines anderen lesen). Name aus dem Garmin-Profil, mit ✏️
+  änderbar. Ab dem 4. Konto weist die Seite auf die Last hin.
+- Neu: **Gleiche Einstellungen für alle Konten** (Standard) – oder Schreibrechte, Bereiche
+  und Tools pro Konto.
+- Update: Deine bestehende Anmeldung wird das erste Konto – gleiche Connector-URL, gleicher
+  Schalter (`switch.garmin_connect_mcp_server`). Hilfs-Integration 0.5.0, daher bittet Home
+  Assistant einmal um einen Neustart. Hinweis: Jeder Administrator in Home Assistant sieht
+  auf der App-Seite alle Konten.
+
 ## 0.5.6
 
 - Improved: the German documentation is now shown in Home Assistant too – the

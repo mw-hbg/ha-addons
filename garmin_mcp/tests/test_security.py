@@ -31,13 +31,13 @@ def test_mcp_server_gets_no_supervisor_token(monkeypatch):
         captured.update(cmd=cmd, env=env, cwd=cwd, kwargs=kwargs)
         return FakeProc()
 
-    monkeypatch.setattr(L, "mcp_identity", lambda: (4242, 4243))
+    monkeypatch.setattr(L, "mcp_identity", lambda user="garmin": (4242, 4243))
     monkeypatch.setattr(L.os, "lchown", lambda *a: None)
     monkeypatch.setattr(L.os, "chown", lambda *a: None)
 
     monkeypatch.setattr(L.subprocess, "Popen", fake_popen)
     services = L.Services()
-    services.start_mcp()
+    services.primary.start_mcp()
     env = captured["env"]
     assert "SUPERVISOR_TOKEN" not in env and "HASSIO_TOKEN" not in env
     assert "GARMIN_PASSWORD" not in env
@@ -140,9 +140,10 @@ def test_login_attempts_are_throttled(monkeypatch):
 
 
 def test_half_finished_mfa_login_expires():
-    L.PENDING_MFA.update({"garmin": object(), "state": None, "started": 0})
-    L.expire_pending_mfa()
-    assert not L.PENDING_MFA
+    account = L.Services().primary
+    account.pending_mfa.update({"garmin": object(), "state": None, "started": 0})
+    account.expire_pending_mfa()
+    assert not account.pending_mfa
 
 
 # --- files with secrets ---------------------------------------------------------
@@ -185,14 +186,23 @@ def test_discovery_tells_the_integration_everything_it_needs(monkeypatch):
     monkeypatch.setattr(L.socket, "gethostname", lambda: "abcd1234-garmin-mcp")
     monkeypatch.setattr(L, "_own_ip", lambda: "172.30.33.5")
     services = L.Services()
+    second = services.add_account()
     remote = L.RemoteAccess(services)
     config = remote.discovery_config()
+    first = services.primary
     assert config["app_slug"] == "abcd1234_garmin_mcp"
-    assert config["target_url"] == f"http://172.30.33.5:8100/{services.secret}/mcp"
-    assert config["report_url"] == f"http://172.30.33.5:8100/{services.secret}/ha"
+    assert config["report_url"] == f"http://172.30.33.5:8100/{services.report_secret}/ha"
+    assert [a["id"] for a in config["accounts"]] == ["1", second.id]
+    assert config["accounts"][1]["target_url"] == f"http://172.30.33.5:8100/{second.secret}/mcp"
+    assert config["accounts"][1]["webhook_id"] == second.webhook_id != first.webhook_id
+    # helper integrations before 0.5 read the first account from the top level
+    assert config["target_url"] == f"http://172.30.33.5:8100/{first.secret}/mcp"
+    assert config["webhook_id"] == first.webhook_id
+    assert services.report_secret not in (first.secret, second.secret)
     import garmin_mcp_webhook.config_flow as flow
 
-    assert flow.entry_data(config, "abcd1234_garmin_mcp") is not None
+    data = flow.entry_data(config, "abcd1234_garmin_mcp")
+    assert [a["id"] for a in data["accounts"]] == ["1", second.id]
 
 
 def test_app_has_no_home_assistant_api():
@@ -213,18 +223,21 @@ def test_report_needs_the_key_from_nginx(monkeypatch):
     remote = L.RemoteAccess(services)
     monkeypatch.setattr(L, "SERVICES", services, raising=False)
     monkeypatch.setattr(L, "REMOTE", remote, raising=False)
-    monkeypatch.setattr(services, "login_status", lambda: "failed")
+    monkeypatch.setattr(services.primary, "login_status", lambda: "failed")
     with TestClient(L.app, client=("127.0.0.1", 50000)) as client:
         assert client.post("/report", json={}).status_code == 403
         assert client.post("/report", json={}, headers={"X-Report-Key": "wrong"}).status_code == 403
+        # an account's secret path (it is in AI apps) is not the key
+        assert client.post("/report", json={}, headers={"X-Report-Key": services.primary.secret}).status_code == 403
         too_big = {"external_url": "x" * 5000}
-        assert client.post("/report", json=too_big, headers={"X-Report-Key": services.secret}).status_code == 413
+        assert client.post("/report", json=too_big, headers={"X-Report-Key": services.report_secret}).status_code == 413
         resp = client.post(
             "/report",
             json={"external_url": "https://home.example.com/lovelace", "language": "de", "integration_version": "1", "evil": "<script>"},
-            headers={"X-Report-Key": services.secret},
+            headers={"X-Report-Key": services.report_secret},
         )
     assert resp.status_code == 200 and resp.json()["login"] == "failed"
+    assert resp.json()["accounts"]["1"]["login"] == "failed"
     assert remote.report["external_url"] == "https://home.example.com" and remote.base_url() == "https://home.example.com"
     assert "evil" not in remote.report
 
@@ -232,7 +245,7 @@ def test_report_needs_the_key_from_nginx(monkeypatch):
 def test_report_endpoint_only_in_webhook_mode_and_only_internal():
     services = L.Services()
     conf = services._report_location()
-    assert f"/{services.secret}/ha" in conf and "allow 172.30.32.0/23;" in conf and "deny all;" in conf
+    assert f"/{services.report_secret}/ha" in conf and "allow 172.30.32.0/23;" in conf and "deny all;" in conf
     services.options = {**services.options, "remote_access": "direct"}
     assert services._report_location() == ""
 
@@ -259,24 +272,17 @@ def test_page_is_only_for_home_assistant(monkeypatch):
 
     monkeypatch.setattr(L, "ALLOW_ANY_UI_CLIENT", False)
 
-    class FakeServices:
-        active_tools = set()
-        options = {}
-
-        def mcp_state(self):
-            return "stopped"
-
-        def shown_state(self):
-            return "stopped"
-
-    monkeypatch.setattr(L, "SERVICES", FakeServices(), raising=False)
+    services = L.Services()
+    monkeypatch.setattr(L, "SERVICES", services, raising=False)
+    monkeypatch.setattr(L, "REMOTE", L.RemoteAccess(services), raising=False)
     for ip, page, status_json in (("127.0.0.1", 403, 200), ("172.30.32.2", None, 200), ("8.8.8.8", 403, 403)):
         with TestClient(L.app, client=(ip, 50000)) as client:
             assert client.get("/status.json").status_code == status_json, ip
             if page:
                 assert client.get("/").status_code == page, ip
-                assert client.post("/rotate").status_code == page, ip
-                assert client.post("/tools").status_code == page, ip
+                for path in ("/rotate", "/tools", "/accounts/add", "/accounts/remove", "/accounts/rename",
+                             "/accounts/settings", "/settings/shared", "/login", "/logout"):
+                    assert client.post(path).status_code == page, (ip, path)
 
 
 def test_landlock_limits_the_mcp_server_to_its_folders(tmp_path):
@@ -362,13 +368,13 @@ def test_rejected_login_during_a_call_is_reported(run_mcp, tmp_path, monkeypatch
 
 
 def test_app_shows_failed_login_from_the_marker(monkeypatch, tmp_path):
-    services = L.Services()
-    monkeypatch.setattr(L, "AUTH_FAILED_FILE", tmp_path / "auth_failed")
-    monkeypatch.setattr(L, "has_tokens", lambda: True)
-    monkeypatch.setattr(services, "mcp_state", lambda: "ready")
-    assert services.login_status() == "ok" and services.shown_state() == "ready"
+    account = L.Services().primary
+    account.auth_failed_file = tmp_path / "auth_failed"
+    monkeypatch.setattr(account, "has_tokens", lambda: True)
+    monkeypatch.setattr(account, "mcp_state", lambda: "ready")
+    assert account.login_status() == "ok" and account.shown_state() == "ready"
     (tmp_path / "auth_failed").write_text("x")
-    assert services.login_status() == "failed" and services.shown_state() == "failed"
+    assert account.login_status() == "failed" and account.shown_state() == "failed"
 
 
 # --- switch "Garmin Connect MCP Server" in Home Assistant ----------------------------
@@ -376,34 +382,36 @@ def test_app_shows_failed_login_from_the_marker(monkeypatch, tmp_path):
 def test_switch_in_home_assistant_stops_and_starts_the_server(monkeypatch):
     L.SWITCHED_OFF_FILE.unlink(missing_ok=True)
     services = L.Services()
+    account = services.primary
     calls = []
-    monkeypatch.setattr(services, "stop_mcp", lambda: calls.append("stop"))
-    monkeypatch.setattr(services, "start_mcp", lambda: calls.append("start"))
+    monkeypatch.setattr(account, "stop_mcp", lambda: calls.append("stop"))
+    monkeypatch.setattr(account, "start_mcp", lambda: calls.append("start"))
     remote = L.RemoteAccess(services)
     version = remote.bundled_version()
 
+    # helper integration 0.4: one switch at the top level = first account
     answer = remote.receive_report({"integration_version": version, "mcp_enabled": False})
     assert calls == ["stop"] and answer["mcp_enabled"] is False
-    assert services.switched_off and L.SWITCHED_OFF_FILE.exists()
-    assert services.login_status() == "off" and services.shown_state() == "off"
+    assert account.switched_off and L.SWITCHED_OFF_FILE.exists()
+    assert account.login_status() == "off" and account.shown_state() == "off"
 
     remote.receive_report({"integration_version": version, "mcp_enabled": False})
-    remote.receive_report({"integration_version": version})  # older integration: no change
+    remote.receive_report({"integration_version": version})  # nothing about switches: no change
     assert calls == ["stop"]
 
-    answer = remote.receive_report({"integration_version": version, "mcp_enabled": True})
-    assert calls == ["stop", "start"] and answer["mcp_enabled"] is True
-    assert not services.switched_off and not L.SWITCHED_OFF_FILE.exists()
+    answer = remote.receive_report({"integration_version": version, "accounts": {"1": {"mcp_enabled": True}}})
+    assert calls == ["stop", "start"] and answer["accounts"]["1"]["mcp_enabled"] is True
+    assert not account.switched_off and not L.SWITCHED_OFF_FILE.exists()
 
 
 def test_switched_off_server_is_not_started_and_survives_a_restart(monkeypatch):
     L.SWITCHED_OFF_FILE.touch()
     try:
-        services = L.Services()
-        assert services.switched_off
+        account = L.Services().primary
+        assert account.switched_off
         monkeypatch.setattr(L.subprocess, "Popen", lambda *a, **k: pytest.fail("must not start"))
-        services.start_mcp()
-        assert services.mcp is None
+        account.start_mcp()
+        assert account.mcp is None
     finally:
         L.SWITCHED_OFF_FILE.unlink(missing_ok=True)
 
@@ -412,8 +420,8 @@ def test_switch_only_counts_in_webhook_mode(monkeypatch):
     L.SWITCHED_OFF_FILE.touch()
     original = L.load_options
     monkeypatch.setattr(L, "load_options", lambda: {**original(), "remote_access": "direct"})
-    services = L.Services()
-    assert not services.switched_off and not L.SWITCHED_OFF_FILE.exists()
+    account = L.Services().primary
+    assert not account.switched_off and not L.SWITCHED_OFF_FILE.exists()
 
 
 def test_stand_in_explains_the_switch():

@@ -31,6 +31,10 @@ please report those there – and in Garmin's own services.
   mode remove) the helper integration `custom_components/garmin_mcp_webhook`.
 * An AppArmor profile confines the whole app; in the configuration folder it only
   allows `custom_components/garmin_mcp_webhook`.
+* Several Garmin accounts: every account has its own secret URL and its own MCP server,
+  running as its own unprivileged user – no account can read another account's tokens.
+  Every Home Assistant administrator can open the app page and therefore sees all
+  accounts and their connector URLs (by design).
 * The internet-facing MCP server runs as an unprivileged user. Where the Linux kernel
   offers Landlock, it additionally confines itself to its own folders (Garmin tokens,
   downloads, `/tmp`); Home Assistant OS currently does not offer it (the app log says

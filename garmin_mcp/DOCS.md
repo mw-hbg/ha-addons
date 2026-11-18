@@ -202,16 +202,50 @@ Home Assistant language:
 
 ### Switching the server off
 
-The helper integration adds the device **Garmin Connect MCP** with the switch
-**Garmin Connect MCP Server** (webhook mode only). Turn it off and no AI app can reach
-your Garmin data any more: Home Assistant answers every request itself with "switched
+The helper integration adds a device **Garmin Connect MCP <name>** per Garmin account,
+each with the switch **Garmin Connect MCP <name> Server** (webhook mode only). Turn it
+off and no AI app can reach the Garmin data of this account any more: Home Assistant answers every request itself with "switched
 off" – nothing is forwarded to the app – and the app stops its Garmin server. Login,
 settings and connector URL stay; turn the switch on and everything works again within
 seconds. The state survives restarts.
 
 The switch is a normal entity: use it in automations (e.g. off at night or while you
 are on holiday), on dashboards or with voice assistants. The app page shows
-*Switched off in Home Assistant* while it is off.
+*Switched off in Home Assistant* while it is off. A switched-off account needs no memory
+for its Garmin server.
+
+### Several Garmin accounts
+
+One app can serve up to **10 Garmin accounts** – e.g. everyone in the household with
+their own AI app. **Add Garmin account** on the app page creates a new card; log in there.
+Every account has:
+
+* its own Garmin login (incl. two-factor authentication) and its **own connector URL** –
+  each person adds only their own URL to their AI app,
+* its own connection test, **Generate new secret URL**, log out and **Remove account**,
+* its own device and switch in Home Assistant and its own repair notice
+  (“Garmin login of <name> no longer valid”),
+* its own Garmin server, running as its own unprivileged user: no account can read another
+  account's tokens.
+
+**Name:** by default the name from the Garmin profile; ✏️ next to it sets your own name.
+It is shown on the page and in Home Assistant (device, switch); entity IDs stay the same.
+
+**Rights:** with **Same settings for all accounts** (default) write access and tool
+choice from the configuration apply to every account. Untick it to set write access,
+areas and tools per account (*Rights of this account* in each card).
+
+**Load:** every running account needs roughly 70–80 MB of memory. From the 4th account
+the page shows a warning – fine on a Raspberry Pi 5, possibly too much on devices with
+1–2 GB.
+
+**Who sees what:** the app page is only available to Home Assistant **administrators**,
+and every administrator sees and manages **all** accounts, including their connector
+URLs. Only add accounts of people who trust each other's admins.
+
+**Updating from an earlier version:** your existing login becomes the first account –
+same connector URL, same switch (`switch.garmin_connect_mcp_server`), nothing to redo.
+Home Assistant asks for one restart (new helper integration).
 
 ### Language
 
@@ -222,7 +256,8 @@ easy, see [TRANSLATING.md](https://github.com/mw-hbg/ha-garmin-mcp/blob/main/gar
 
 ### Choosing tools
 
-The app page shows, per category, what the AI may do. **Choose tools** opens
+The app page shows, per category, what the AI may do (for all accounts, or per account
+when they do not share their settings). **Choose tools** opens
 a list of all tools grouped by category, with a search field, presets
 (*read only*, *create, never delete*, *everything*, *nothing*), a checkbox per
 tool and an **i** button explaining what each tool does and what kind of access
@@ -691,9 +726,9 @@ in der Sprache von Home Assistant:
 
 ### Server ausschalten
 
-Die Hilfs-Integration legt das Gerät **Garmin Connect MCP** mit dem Schalter
-**Garmin Connect MCP Server** an (nur im Modus webhook). Ist er aus, erreicht keine
-KI-App mehr deine Garmin-Daten: Home Assistant beantwortet jede Anfrage selbst mit
+Die Hilfs-Integration legt pro Garmin-Konto ein Gerät **Garmin Connect MCP <Name>** mit
+dem Schalter **Garmin Connect MCP <Name> Server** an (nur im Modus webhook). Ist er aus,
+erreicht keine KI-App mehr die Garmin-Daten dieses Kontos: Home Assistant beantwortet jede Anfrage selbst mit
 „ausgeschaltet“ – nichts wird an die App weitergeleitet – und die App stoppt ihren
 Garmin-Server. Anmeldung, Einstellungen und Connector-URL bleiben; Schalter wieder an,
 und nach wenigen Sekunden funktioniert alles wie vorher. Der Zustand übersteht
@@ -701,7 +736,43 @@ Neustarts.
 
 Der Schalter ist eine normale Entität: in Automationen nutzbar (z. B. nachts oder im
 Urlaub aus), auf Dashboards oder mit Sprachassistenten. Solange er aus ist, zeigt die
-App-Seite *In Home Assistant ausgeschaltet*.
+App-Seite *In Home Assistant ausgeschaltet*. Ein ausgeschaltetes Konto braucht keinen
+Arbeitsspeicher für seinen Garmin-Server.
+
+### Mehrere Garmin-Konten
+
+Eine App kann bis zu **10 Garmin-Konten** bedienen – z. B. jede Person im Haushalt mit
+ihrer eigenen KI-App. **Garmin-Konto hinzufügen** auf der App-Seite legt eine neue Karte
+an; dort anmelden. Jedes Konto hat:
+
+* eine eigene Garmin-Anmeldung (inkl. Zwei-Faktor-Code) und eine **eigene Connector-URL** –
+  jede Person trägt nur ihre eigene URL in ihre KI-App ein,
+* einen eigenen Verbindungstest, **Neue geheime URL erzeugen**, Abmelden und
+  **Konto entfernen**,
+* ein eigenes Gerät mit Schalter in Home Assistant und einen eigenen Reparatur-Hinweis
+  („Garmin-Anmeldung von <Name> nicht mehr gültig“),
+* einen eigenen Garmin-Server, der als eigener eingeschränkter Benutzer läuft: Kein Konto
+  kann die Tokens eines anderen lesen.
+
+**Name:** standardmäßig der Name aus dem Garmin-Profil; ✏️ daneben setzt einen eigenen
+Namen. Er erscheint auf der Seite und in Home Assistant (Gerät, Schalter);
+Entitäts-IDs bleiben gleich.
+
+**Rechte:** Mit **Gleiche Einstellungen für alle Konten** (Standard) gelten Schreibrechte
+und Tool-Auswahl aus der Konfiguration für jedes Konto. Ohne Haken stellst du
+Schreibrechte, Bereiche und Tools pro Konto ein (*Rechte dieses Kontos* in jeder Karte).
+
+**Last:** Jedes laufende Konto braucht etwa 70–80 MB Arbeitsspeicher. Ab dem 4. Konto
+zeigt die Seite einen Hinweis – auf einem Raspberry Pi 5 kein Problem, auf Geräten mit
+1–2 GB eventuell zu viel.
+
+**Wer was sieht:** Die App-Seite steht in Home Assistant nur **Administratoren** offen, und
+jeder Administrator sieht und verwaltet **alle** Konten – auch ihre Connector-URLs. Nimm
+nur Konten von Personen auf, die den Administratoren vertrauen.
+
+**Update von einer früheren Version:** Deine bestehende Anmeldung wird das erste Konto –
+gleiche Connector-URL, gleicher Schalter (`switch.garmin_connect_mcp_server`), nichts neu
+einzurichten. Home Assistant bittet einmal um einen Neustart (neue Hilfs-Integration).
 
 ### Sprache
 
@@ -713,7 +784,8 @@ hinzuzufügen ist einfach, siehe
 
 ### Tools auswählen
 
-Die App-Seite zeigt pro Kategorie, was die KI darf. **Tools auswählen** öffnet eine Liste
+Die App-Seite zeigt pro Kategorie, was die KI darf (für alle Konten oder pro Konto, wenn
+sie ihre Einstellungen nicht teilen). **Tools auswählen** öffnet eine Liste
 aller Tools nach Kategorien mit Suchfeld, Vorlagen (*nur lesen*, *anlegen, nie löschen*,
 *alles*, *nichts*), einem Häkchen pro Tool und einem **i**-Knopf, der erklärt, was das
 Tool tut und welchen Zugriff es braucht (lesen / anlegen / ändern-löschen). Speichern

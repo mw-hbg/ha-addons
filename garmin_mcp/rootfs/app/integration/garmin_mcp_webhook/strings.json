@@ -19,8 +19,8 @@
       }
     },
     "garmin_login": {
-      "title": "Garmin Connect MCP: Garmin login no longer valid",
-      "description": "The Garmin Connect login of the Garmin Connect MCP app is no longer valid – your AI assistant cannot read your Garmin data. Open **Garmin MCP** in the sidebar and log in again. This notice disappears by itself afterwards."
+      "title": "Garmin Connect MCP: Garmin login of {name} no longer valid",
+      "description": "The Garmin Connect login of the account **{name}** in the Garmin Connect MCP app is no longer valid – the AI assistant cannot read its Garmin data. Open **Garmin MCP** in the sidebar and log in again in the card of this account. This notice disappears by itself afterwards."
     }
   },
   "removal": {
